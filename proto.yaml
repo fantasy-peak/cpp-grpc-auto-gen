@@ -1,0 +1,22 @@
+---
+namespace: agrpc
+class_name: GrpcServer
+include_grpc_files: [example.grpc.pb.h, example.pb.h]
+package: fantasy.v1
+
+interface:
+  Example:
+    - name: Notice
+      input: NoticeRequest
+      output: NoticeResponse
+      type: bidirectional-streaming-rpc
+
+    - name: Order
+      input: OrderRequest
+      output: OrderResponse
+      type: unary-rpc
+
+    - name: GetOrderSeqNo
+      input: GetOrderSeqNoRequest
+      output: GetOrderSeqNoResponse
+      type: unary-rpc
