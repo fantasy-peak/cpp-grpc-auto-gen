@@ -6,9 +6,11 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #include <spdlog/spdlog.h>
@@ -17,6 +19,11 @@
 #ifndef AGRPC_BOOST_ASIO
 #define AGRPC_BOOST_ASIO 1
 #endif
+
+#ifndef USE_BOOST_CIRCULAR_BUFFER
+#define USE_BOOST_CIRCULAR_BUFFER 1
+#endif
+
 #include <grpc_server.hpp>
 
 enum Status {
@@ -43,6 +50,9 @@ auto checkClOrderId(const std::string& str, CompletionToken&& token) {
 }
 
 struct TestServer {
+    using StopChannel = boost::asio::experimental::concurrent_channel<
+        void(boost::system::error_code, std::string)>;
+
     TestServer() = default;
     ~TestServer() = default;
 
@@ -86,6 +96,17 @@ struct TestServer {
         auto chan =
             std::make_shared<agrpc::ConcurrentChannel>(rpc.get_executor(),
                                                        m_channel_size);
+        auto stop_chan = std::make_shared<StopChannel>(rpc.get_executor(), 1);
+
+        {
+            std::unique_lock lk(m_stop_mutex);
+            if (m_stop) {
+                lk.unlock();
+                co_await rpc.finish(grpc::Status::OK);
+                co_return;
+            }
+            m_exit_chan.emplace_back(stop_chan);
+        }
 
         auto next_deadline =
             std::chrono::system_clock::now() + std::chrono::seconds(2);
@@ -97,17 +118,21 @@ struct TestServer {
                   read_ok,
                   alarm_expired,
                   error_code,
-                  notice_ptr] =
+                  notice_ptr,
+                  stop_chan_error_code,
+                  stop_chan_str] =
                 co_await boost::asio::experimental::make_parallel_group(
                     waiter.wait(boost::asio::deferred),
                     alarm.wait(next_deadline, boost::asio::deferred),
-                    chan->async_receive(boost::asio::deferred))
+                    chan->async_receive(boost::asio::deferred),
+                    stop_chan->async_receive(boost::asio::deferred))
                     .async_wait(boost::asio::experimental::wait_for_one(),
                                 boost::asio::use_awaitable);
             if (0 == completion_order[0])  // read completed
             {
                 if (read_ok) {
-                    auto no = std::atoi(request.notice_seq_no().c_str());
+                    auto no = std::stoul(request.notice_seq_no());
+#if 0
                     auto [notice_store, ptr] = m_pub_sub_service->subscribe(
                         "001",
                         no,
@@ -122,6 +147,42 @@ struct TestServer {
                                     SPDLOG_INFO("channel close");
                             }
                         });
+#else
+                    std::weak_ptr<agrpc::ConcurrentChannel> ch = chan;
+                    auto [notice_store, ptr] = m_pub_sub_service->subscribe(
+                        "001",
+                        [=](const std::shared_ptr<agrpc::Message>& ptr) {
+                            if (auto sp = ch.lock()) {
+                                auto ret =
+                                    sp->try_send(boost::system::error_code{},
+                                                 ptr);
+                                if (!ret) {
+                                    if (chan->is_open())
+                                        SPDLOG_INFO("channel full");
+                                    else
+                                        SPDLOG_INFO("channel close");
+                                }
+                            }
+                        },
+                        [seq_no = no](const boost::circular_buffer<
+                                      std::shared_ptr<agrpc::Message>>& buffer)
+                            -> std::vector<std::shared_ptr<agrpc::Message>> {
+                            SPDLOG_INFO("call filter...");
+                            std::vector<std::shared_ptr<agrpc::Message>>
+                                msg_vec;
+                            auto it = std::ranges::find_if(
+                                buffer,
+                                [&](const std::shared_ptr<agrpc::Message>&
+                                        ptr) { return seq_no == ptr->seq_no; });
+                            if (it == buffer.end())
+                                return msg_vec;
+                            msg_vec.reserve(std::distance(it, buffer.end()));
+                            std::for_each(it, buffer.end(), [&](auto& ptr) {
+                                msg_vec.emplace_back(ptr);
+                            });
+                            return msg_vec;
+                        });
+#endif
                     scoped_conn_ptr = std::move(ptr);
                     for (auto& notice_ptr : notice_store) {
                         fantasy::v1::NoticeResponse response;
@@ -138,11 +199,6 @@ struct TestServer {
                 waiter.initiate(agrpc::read, rpc, request);
             } else if (1 == completion_order[0])  // alarm expired
             {
-                if (m_stop.load(std::memory_order_relaxed)) {
-                    SPDLOG_INFO("send close.");
-                    co_await rpc.finish(grpc::Status::OK);
-                    break;
-                }
                 next_deadline =
                     std::chrono::system_clock::now() + std::chrono::seconds(2);
             } else if (2 == completion_order[0]) {
@@ -155,20 +211,24 @@ struct TestServer {
                 } else {
                     exit(1);
                 }
+            } else if (3 == completion_order[0]) {
+                // recv stop
+                SPDLOG_INFO("Receive exit signal!!!");
+                co_await rpc.finish(grpc::Status::OK);
+                break;
             }
         }
         SPDLOG_INFO("close channel!!!");
         chan->close();
+        stop_chan->close();
     }
 
     void init() {
         m_config = agrpc::GrpcConfig{
             .host = "0.0.0.0:5566",
             .thread_count = 2,
-            .circular_buffer_size = 100000,
         };
-        m_pub_sub_service = std::make_shared<agrpc::PubSubService>(
-            m_config.circular_buffer_size);
+        m_pub_sub_service = std::make_shared<agrpc::PubSubService>(100000);
         m_grpc_server = std::make_unique<agrpc::GrpcServer>(m_config);
         m_grpc_server->setExampleOrderRpcCallback(
             std::bind_front(&TestServer::orderRpcHandler, this));
@@ -178,17 +238,22 @@ struct TestServer {
             std::bind_front(&TestServer::getOrderSeqNoRpcHandler, this));
         m_grpc_server->start();
 
-        std::thread([this] {
+        std::weak_ptr<agrpc::PubSubService> pub_sub_service = m_pub_sub_service;
+        std::thread([=] {
             uint32_t count = 0;
             while (true) {
-                for (int i = 0; i < 2; i++) {
-                    m_pub_sub_service->publish("001",
-                                               std::make_shared<std::string>(
-                                                   std::string{"hello_"} +
-                                                   std::to_string(count)));
-                    count++;
-                    // std::this_thread::sleep_for(std::chrono::microseconds(25));
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                if (auto sp = pub_sub_service.lock()) {
+                    for (int i = 0; i < 2; i++) {
+                        sp->publish("001",
+                                    std::make_shared<std::string>(
+                                        std::string{"hello_"} +
+                                        std::to_string(count)));
+                        count++;
+                        // std::this_thread::sleep_for(std::chrono::microseconds(25));
+                        std::this_thread::sleep_for(std::chrono::seconds(1));
+                    }
+                } else {
+                    break;
                 }
                 // sleep(3);
             }
@@ -196,8 +261,28 @@ struct TestServer {
     }
 
     void stop() {
-        m_stop.store(true, std::memory_order_release);
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        {
+            std::lock_guard lk(m_stop_mutex);
+            m_stop = true;
+            for (auto& weak_ptr : m_exit_chan) {
+                if (auto sp = weak_ptr.lock())
+                    sp->try_send(boost::system::error_code{}, "stop");
+            }
+        }
+        while (true) {
+            {
+                std::lock_guard lk(m_stop_mutex);
+                std::erase_if(m_exit_chan, [](auto& chan) {
+                    if (auto sp = chan.lock())
+                        return false;
+                    return true;
+                });
+                if (m_exit_chan.empty())
+                    break;
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        SPDLOG_INFO("stop chan exit done.");
         m_grpc_server->stop();
         m_grpc_server.reset();
     }
@@ -205,8 +290,10 @@ struct TestServer {
     std::shared_ptr<agrpc::GrpcServer> m_grpc_server;
     std::shared_ptr<agrpc::PubSubService> m_pub_sub_service;
     agrpc::GrpcConfig m_config;
-    std::atomic_bool m_stop{false};
+    bool m_stop{false};
     int32_t m_channel_size{1000000};
+    std::mutex m_stop_mutex;
+    std::vector<std::weak_ptr<StopChannel>> m_exit_chan;
 };
 
 int main() {
@@ -226,5 +313,6 @@ int main() {
     TestServer.stop();
     std::this_thread::sleep_for(std::chrono::seconds(5));
     SPDLOG_INFO("--------------------end---------------");
+    std::this_thread::sleep_for(std::chrono::seconds(20));
     return 0;
 }

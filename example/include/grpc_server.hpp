@@ -19,7 +19,9 @@
 #include <vector>
 #include <shared_mutex>
 
+#ifdef USE_BOOST_CIRCULAR_BUFFER
 #include <boost/circular_buffer.hpp>
+#endif
 #ifdef AGRPC_BOOST_ASIO
 #include <boost/asio.hpp>
 #include <boost/asio/awaitable.hpp>
@@ -84,11 +86,20 @@ struct Message {
     uint64_t seq_no;
 };
 
-struct Topic final {
-    explicit Topic(std::size_t count) : m_circular_buffer_ptr(count) {
+class Topic final : public std::enable_shared_from_this<Topic> {
+  public:
+#ifdef USE_BOOST_CIRCULAR_BUFFER
+    explicit Topic(std::size_t count) : m_buffer(count) {
     }
+#else
+    explicit Topic(std::size_t count) {
+        m_buffer.reserve(count);
+    }
+#endif
 
-    ~Topic() = default;
+    ~Topic() {
+        clear();
+    }
 
     Topic(const Topic&) = delete;
     Topic(Topic&&) = delete;
@@ -96,8 +107,8 @@ struct Topic final {
     Topic& operator=(Topic&&) = delete;
 
     struct ScopedConn {
-        ScopedConn(Topic& topic_store, uint64_t call_id)
-            : m_topic_store(topic_store), m_call_id(call_id) {
+        ScopedConn(std::weak_ptr<Topic> topic_ptr, uint64_t call_id)
+            : m_topic_ptr(std::move(topic_ptr)), m_call_id(call_id) {
         }
 
         ScopedConn(const ScopedConn&) = delete;
@@ -106,11 +117,11 @@ struct Topic final {
         ScopedConn& operator=(ScopedConn&&) = delete;
 
         ~ScopedConn() {
-            std::lock_guard lk(m_topic_store.m_mutex);
-            m_topic_store.m_sig.erase(m_call_id);
+            if (auto sp = m_topic_ptr.lock())
+                sp->erase(m_call_id);
         }
 
-        Topic& m_topic_store;
+        std::weak_ptr<Topic> m_topic_ptr;
         uint64_t m_call_id;
     };
 
@@ -120,8 +131,8 @@ struct Topic final {
         std::lock_guard lk(m_mutex);
         auto message_ptr =
             std::make_shared<Message>(std::forward<T>(ptr), m_seq_no++);
-        m_circular_buffer_ptr.push_back(std::move(message_ptr));
-        auto& buffer_ptr = m_circular_buffer_ptr.back();
+        m_buffer.push_back(std::move(message_ptr));
+        auto& buffer_ptr = m_buffer.back();
         for (auto& [call_id, sig] : m_sig)
             sig(buffer_ptr);
     }
@@ -130,24 +141,58 @@ struct Topic final {
                    std::function<void(const std::shared_ptr<Message>&)> cb) {
         std::lock_guard lk(m_mutex);
         auto scoped_connection_ptr =
-            std::make_unique<ScopedConn>(*this, m_call_id);
+            std::make_unique<ScopedConn>(shared_from_this(), m_call_id);
         m_sig.emplace(m_call_id++, std::move(cb));
         std::vector<std::shared_ptr<Message>> msg_vec;
-        auto it = std::ranges::find_if(m_circular_buffer_ptr, [&](auto& ptr) {
+        auto it = std::ranges::find_if(m_buffer, [&](auto& ptr) {
             return seq_no == ptr->seq_no;
         });
-        if (it == m_circular_buffer_ptr.end())
+        if (it == m_buffer.end())
             return std::make_tuple(std::move(msg_vec),
                                    std::move(scoped_connection_ptr));
-        msg_vec.reserve(std::distance(it, m_circular_buffer_ptr.end()));
-        std::for_each(it, m_circular_buffer_ptr.end(), [&](auto& ptr) {
+        msg_vec.reserve(std::distance(it, m_buffer.end()));
+        std::for_each(it, m_buffer.end(), [&](auto& ptr) {
             msg_vec.emplace_back(ptr);
         });
         return std::make_tuple(std::move(msg_vec),
                                std::move(scoped_connection_ptr));
     }
+#ifdef USE_BOOST_CIRCULAR_BUFFER
+    auto subscribe(
+        std::function<void(const std::shared_ptr<Message>&)> cb,
+        const std::function<std::vector<std::shared_ptr<Message>>(
+            const boost::circular_buffer<std::shared_ptr<Message>>&)>& filter) {
+#else
+    auto subscribe(std::function<void(const std::shared_ptr<Message>&)> cb,
+                   const std::function<std::vector<std::shared_ptr<Message>>(
+                       const std::vector<std::shared_ptr<Message>>&)>& filter) {
+#endif
+        std::lock_guard lk(m_mutex);
+        auto scoped_connection_ptr =
+            std::make_unique<ScopedConn>(shared_from_this(), m_call_id);
+        m_sig.emplace(m_call_id++, std::move(cb));
+        auto msg_vec = filter(m_buffer);
+        return std::make_tuple(std::move(msg_vec),
+                               std::move(scoped_connection_ptr));
+    }
 
-    boost::circular_buffer<std::shared_ptr<Message>> m_circular_buffer_ptr;
+    void clear() {
+        std::lock_guard lk(m_mutex);
+        m_sig.clear();
+        m_buffer.clear();
+    }
+
+  private:
+    void erase(uint64_t call_id) {
+        std::lock_guard lk(m_mutex);
+        m_sig.erase(call_id);
+    }
+
+#ifdef USE_BOOST_CIRCULAR_BUFFER
+    boost::circular_buffer<std::shared_ptr<Message>> m_buffer;
+#else
+    std::vector<std::shared_ptr<Message>> m_buffer;
+#endif
     std::mutex m_mutex;
     std::unordered_map<uint64_t,
                        std::function<void(const std::shared_ptr<Message>&)>>
@@ -163,9 +208,7 @@ class PubSubService final {
 
     ~PubSubService() {
         std::unique_lock<std::shared_mutex> lock(m_mutex);
-        for (auto& [topic, topic_ptr] : m_topic_map) {
-            delete topic_ptr;
-        }
+        m_topic_map.clear();
     }
 
     PubSubService(const PubSubService&) = delete;
@@ -177,20 +220,36 @@ class PubSubService final {
         const std::string& topic,
         uint64_t seq_no,
         std::function<void(const std::shared_ptr<Message>&)> cb) {
-        Topic* topic_ptr = getTopicPtr(topic);
+        auto topic_ptr = getTopicPtr(topic);
         return topic_ptr->subscribe(seq_no, std::move(cb));
+    }
+#ifdef USE_BOOST_CIRCULAR_BUFFER
+    decltype(auto) subscribe(
+        const std::string& topic,
+        std::function<void(const std::shared_ptr<Message>&)> cb,
+        std::function<std::vector<std::shared_ptr<Message>>(
+            const boost::circular_buffer<std::shared_ptr<Message>>&)> filter) {
+#else
+    decltype(auto) subscribe(
+        const std::string& topic,
+        std::function<void(const std::shared_ptr<Message>&)> cb,
+        std::function<std::vector<std::shared_ptr<Message>>(
+            const std::vector<std::shared_ptr<Message>>&)> filter) {
+#endif
+        auto topic_ptr = getTopicPtr(topic);
+        return topic_ptr->subscribe(std::move(cb), filter);
     }
 
     template <typename T>
     void publish(const std::string& topic, T&& message) {
-        Topic* topic_ptr = getTopicPtr(topic);
+        auto topic_ptr = getTopicPtr(topic);
         topic_ptr->publish(std::forward<T>(message));
         return;
     }
 
   private:
-    Topic* getTopicPtr(const std::string& topic) {
-        Topic* topic_ptr = nullptr;
+    std::shared_ptr<Topic> getTopicPtr(const std::string& topic) {
+        std::shared_ptr<Topic> topic_ptr = nullptr;
         {
             std::shared_lock<std::shared_mutex> lock(m_mutex);
             auto iter = m_topic_map.find(topic);
@@ -205,20 +264,19 @@ class PubSubService final {
             topic_ptr = iter->second;
             return topic_ptr;
         }
-        topic_ptr = new agrpc::Topic(m_size);
+        topic_ptr = std::make_shared<Topic>(m_size);
         m_topic_map[topic] = topic_ptr;
         return topic_ptr;
     }
 
     std::size_t m_size;
-    std::unordered_map<std::string, Topic*> m_topic_map;
+    std::unordered_map<std::string, std::shared_ptr<Topic>> m_topic_map;
     mutable std::shared_mutex m_mutex;
 };
 
 struct GrpcConfig {
     std::string host;
     int32_t thread_count{2};
-    int32_t circular_buffer_size{1000000};
     int32_t grpc_arg_keepalive_time_ms{10000};
     int32_t grpc_arg_keepalive_timeout_ms{10000};
     int32_t grpc_arg_keepalive_permit_without_calls{1};
@@ -260,6 +318,7 @@ class GrpcServer final {
     GrpcServer& operator=(GrpcServer&&) = delete;
 
     void start() {
+        checkCallback();
         grpc::ServerBuilder builder;
         for (int i = 0; i < m_config.thread_count; i++) {
             m_grpc_contexts.emplace_back(std::make_shared<agrpc::GrpcContext>(
@@ -340,6 +399,16 @@ class GrpcServer final {
     }
 
   private:
+    void checkCallback() {
+        if (!m_example_notice_rpc_handler)
+            throw std::runtime_error("not call setExampleNoticeRpcCallback");
+        if (!m_example_order_rpc_handler)
+            throw std::runtime_error("not call setExampleOrderRpcCallback");
+        if (!m_example_get_order_seq_no_rpc_handler)
+            throw std::runtime_error(
+                "not call setExampleGetOrderSeqNoRpcCallback");
+    }
+
     void registerHandler(auto& grpc_context) {
         agrpc::register_awaitable_rpc_handler<ExampleNoticeRPC>(
             grpc_context,
