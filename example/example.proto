@@ -21,6 +21,9 @@ service Example {
   rpc Notice(stream NoticeRequest) returns (stream NoticeResponse) {}
   rpc GetOrderSeqNo(GetOrderSeqNoRequest) returns (GetOrderSeqNoResponse) {}
   rpc Order(OrderRequest) returns (OrderResponse) {}
+
+  rpc ServerStreaming(OrderRequest) returns (stream OrderResponse) {}
+  rpc ClientStreaming(stream OrderRequest) returns (OrderResponse) {}
 }
 
 message GetOrderSeqNoRequest {

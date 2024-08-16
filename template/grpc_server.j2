@@ -404,7 +404,7 @@ private:
     GrpcConfig m_config;
     {% for service_name in grpc.interface -%}
     {% for interface in grpc.interface[service_name] -%}
-    {% if interface.type=='bidirectional-streaming-rpc' -%}
+    {% if interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' %}
     std::function<asio::awaitable<void>({{service_name}}{{interface.name}}RPC&)> m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler;
     {% else -%}
     std::function<asio::awaitable<void>({{service_name}}{{interface.name}}RPC&, {{grpc.package}}::{{interface.input}}&)> m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler;

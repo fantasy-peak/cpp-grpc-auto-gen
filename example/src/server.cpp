@@ -11,6 +11,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include "boost/asio/awaitable.hpp"
 
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #include <spdlog/spdlog.h>
@@ -41,8 +42,10 @@ auto checkClOrderId(const std::string& str, CompletionToken&& token) {
             std::thread([handler_ptr = std::move(handler_ptr), &str] {
                 auto ex = boost::asio::get_associated_executor(*handler_ptr);
                 boost::asio::post(ex,
-                                  [handler_ptr = std::move(handler_ptr)] mutable
-                                      -> void { (*handler_ptr)(Status::OK); });
+                                  [handler_ptr = std::move(
+                                       handler_ptr)]() mutable -> void {
+                                      (*handler_ptr)(Status::OK);
+                                  });
             }).detach();
         },
         std::forward<CompletionToken>(token),
@@ -236,6 +239,13 @@ struct TestServer {
             std::bind_front(&TestServer::orderNoticeHandler, this));
         m_grpc_server->setExampleGetOrderSeqNoRpcCallback(
             std::bind_front(&TestServer::getOrderSeqNoRpcHandler, this));
+        m_grpc_server->setExampleServerStreamingRpcCallback(
+            [](agrpc::ExampleServerStreamingRPC& rpc,
+               fantasy::v1::OrderRequest& request)
+                -> boost::asio::awaitable<void> { co_return; });
+        m_grpc_server->setExampleClientStreamingRpcCallback(
+            [](agrpc::ExampleClientStreamingRPC& rpc)
+                -> boost::asio::awaitable<void> { co_return; });
         m_grpc_server->start();
 
         std::weak_ptr<agrpc::PubSubService> pub_sub_service = m_pub_sub_service;

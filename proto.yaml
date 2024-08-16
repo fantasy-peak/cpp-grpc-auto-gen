@@ -20,3 +20,13 @@ interface:
       input: GetOrderSeqNoRequest
       output: GetOrderSeqNoResponse
       type: unary-rpc
+
+    - name: ServerStreaming
+      input: OrderRequest
+      output: OrderResponse
+      type: server-streaming-rpc
+
+    - name: ClientStreaming
+      input: OrderRequest
+      output: OrderResponse
+      type: client-streaming-rpc
