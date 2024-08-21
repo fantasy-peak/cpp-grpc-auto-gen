@@ -192,8 +192,10 @@ struct TestServer {
                         auto pp = std::static_pointer_cast<std::string>(
                             notice_ptr->info_ptr);
                         response.set_notice_seq_no(*pp);
-                        co_await rpc.write(response,
-                                           boost::asio::use_awaitable);
+                        co_await rpc.write(
+                            response,
+                            grpc::WriteOptions().set_write_through(),
+                            boost::asio::use_awaitable);
                     }
                 } else {
                     SPDLOG_INFO("client disconnect!!!");
@@ -212,6 +214,7 @@ struct TestServer {
                     response.set_notice_seq_no(*pp);
                     co_await rpc.write(response, boost::asio::use_awaitable);
                 } else {
+                    SPDLOG_INFO("{}", error_code.message());
                     exit(1);
                 }
             } else if (3 == completion_order[0]) {
