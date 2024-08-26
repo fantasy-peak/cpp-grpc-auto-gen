@@ -12,6 +12,13 @@
 #include <utility>
 #include <vector>
 #include "boost/asio/awaitable.hpp"
+#include "boost/container/container_fwd.hpp"
+
+#include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/containers/vector.hpp>
+#include <boost/interprocess/allocators/allocator.hpp>
+#include <boost/interprocess/sync/named_mutex.hpp>
+#include <boost/interprocess/containers/string.hpp>
 
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_DEBUG
 #include <spdlog/spdlog.h>
@@ -26,6 +33,17 @@
 #endif
 
 #include <grpc_server.hpp>
+
+struct Data {
+    boost::container::string topic_name;
+    boost::container::string data;
+    uint64_t seq_no;
+};
+
+template <typename T>
+using ShmemAllocator = boost::interprocess::
+    allocator<T, boost::interprocess::managed_shared_memory::segment_manager>;
+using MyVector = std::vector<Data, ShmemAllocator<Data>>;
 
 enum Status {
     OK,
@@ -61,7 +79,7 @@ struct TestServer {
 
     boost::asio::awaitable<void> getOrderSeqNoRpcHandler(
         agrpc::ExampleGetOrderSeqNoRPC& rpc,
-        fantasy::v1::GetOrderSeqNoRequest& request) {
+        fantasy::v1::GetOrderSeqNoRequest& /* request */) {
         SPDLOG_INFO("GetOrderSeqNo");
         fantasy::v1::GetOrderSeqNoResponse response;
         static std::atomic_int32_t num{9999};
@@ -78,7 +96,7 @@ struct TestServer {
 
     boost::asio::awaitable<void> orderRpcHandler(
         agrpc::ExampleOrderRPC& rpc,
-        fantasy::v1::OrderRequest& request) {
+        fantasy::v1::OrderRequest& /* request */) {
         SPDLOG_INFO("orderRpcHandler");
         fantasy::v1::OrderResponse response;
         response.set_order_seq_no("abc-OrderRequest");
@@ -96,9 +114,8 @@ struct TestServer {
         agrpc::Waiter<void(bool)> waiter;
         waiter.initiate(agrpc::read, rpc, request);
 
-        auto chan =
-            std::make_shared<agrpc::ConcurrentChannel>(rpc.get_executor(),
-                                                       m_channel_size);
+        auto chan = std::make_shared<agrpc::ConcurrentChannel<std::string>>(
+            rpc.get_executor(), m_channel_size);
         auto stop_chan = std::make_shared<StopChannel>(rpc.get_executor(), 1);
 
         {
@@ -113,7 +130,7 @@ struct TestServer {
 
         auto next_deadline =
             std::chrono::system_clock::now() + std::chrono::seconds(2);
-        std::unique_ptr<agrpc::Topic::ScopedConn> scoped_conn_ptr;
+        std::unique_ptr<agrpc::Topic<std::string>::ScopedConn> scoped_conn_ptr;
 
         while (true) {
             auto [completion_order,
@@ -135,11 +152,13 @@ struct TestServer {
             {
                 if (read_ok) {
                     auto no = std::stoul(request.notice_seq_no());
-#if 0
+                    scoped_conn_ptr.reset();
+#if 1
                     auto [notice_store, ptr] = m_pub_sub_service->subscribe(
                         "001",
                         no,
-                        [=](const std::shared_ptr<agrpc::Message>& ptr) {
+                        [=](const std::shared_ptr<agrpc::Message<std::string>>&
+                                ptr) {
                             auto ret =
                                 chan->try_send(boost::system::error_code{},
                                                ptr);
@@ -151,10 +170,12 @@ struct TestServer {
                             }
                         });
 #else
-                    std::weak_ptr<agrpc::ConcurrentChannel> ch = chan;
+                    std::weak_ptr<agrpc::ConcurrentChannel<std::string>> ch =
+                        chan;
                     auto [notice_store, ptr] = m_pub_sub_service->subscribe(
                         "001",
-                        [=](const std::shared_ptr<agrpc::Message>& ptr) {
+                        [=](const std::shared_ptr<agrpc::Message<std::string>>&
+                                ptr) {
                             if (auto sp = ch.lock()) {
                                 auto ret =
                                     sp->try_send(boost::system::error_code{},
@@ -167,16 +188,21 @@ struct TestServer {
                                 }
                             }
                         },
-                        [seq_no = no](const boost::circular_buffer<
-                                      std::shared_ptr<agrpc::Message>>& buffer)
-                            -> std::vector<std::shared_ptr<agrpc::Message>> {
+                        [seq_no =
+                             no](const boost::circular_buffer<std::shared_ptr<
+                                     agrpc::Message<std::string>>>& buffer)
+                            -> std::vector<
+                                std::shared_ptr<agrpc::Message<std::string>>> {
                             SPDLOG_INFO("call filter...");
-                            std::vector<std::shared_ptr<agrpc::Message>>
+                            std::vector<
+                                std::shared_ptr<agrpc::Message<std::string>>>
                                 msg_vec;
                             auto it = std::ranges::find_if(
                                 buffer,
-                                [&](const std::shared_ptr<agrpc::Message>&
-                                        ptr) { return seq_no == ptr->seq_no; });
+                                [&](const std::shared_ptr<
+                                    agrpc::Message<std::string>>& ptr) {
+                                    return seq_no == ptr->seq_no;
+                                });
                             if (it == buffer.end())
                                 return msg_vec;
                             msg_vec.reserve(std::distance(it, buffer.end()));
@@ -189,13 +215,26 @@ struct TestServer {
                     scoped_conn_ptr = std::move(ptr);
                     for (auto& notice_ptr : notice_store) {
                         fantasy::v1::NoticeResponse response;
-                        auto pp = std::static_pointer_cast<std::string>(
-                            notice_ptr->info_ptr);
-                        response.set_notice_seq_no(*pp);
+                        response.set_notice_seq_no(*notice_ptr->info_ptr);
                         co_await rpc.write(
                             response,
                             grpc::WriteOptions().set_write_through(),
                             boost::asio::use_awaitable);
+#if 0
+                        std::string tmp;
+                        if (!response.SerializeToString(&tmp)) {
+                            SPDLOG_ERROR("SerializeToString");
+                            exit(1);
+                        }
+                        std::cout << tmp << std::endl;
+                        fantasy::v1::NoticeResponse response1;
+                        if (response1.ParseFromString(tmp)) {
+                            SPDLOG_INFO("notice_seq_no: {}",
+                                        response1.notice_seq_no());
+                        } else {
+                            std::cerr << "Failed to parse NoticeResponse from string\n";
+                        }
+#endif
                     }
                 } else {
                     SPDLOG_INFO("client disconnect!!!");
@@ -234,7 +273,54 @@ struct TestServer {
             .host = "0.0.0.0:5566",
             .thread_count = 2,
         };
-        m_pub_sub_service = std::make_shared<agrpc::PubSubService>(100000);
+        // shared_memory_object::remove("MySharedMemory");
+        static boost::interprocess::managed_shared_memory segment(
+            boost::interprocess::open_or_create, "MySharedMemory", 65536);
+
+        static boost::interprocess::named_mutex mtx(
+            boost::interprocess::open_or_create,
+            "your_globally_unique_mutex_name");
+
+        m_pub_sub_service =
+            std::make_shared<agrpc::PubSubService<std::string>>(100000);
+
+        m_pub_sub_service->setNoticeCallback(
+            [](const std::string& topic_name,
+               const std::shared_ptr<agrpc::Message<std::string>>&
+                   ptr) mutable {
+                using namespace boost::interprocess;
+                scoped_lock<named_mutex> lock(mtx);
+                auto* myvector = segment.find_or_construct<MyVector>(
+                    "MyVector")(segment.get_segment_manager());
+                Data dd{{topic_name.data(), topic_name.size()},
+                        {ptr->info_ptr->data(), ptr->info_ptr->size()},
+                        ptr->seq_no};
+                myvector->push_back(dd);
+                SPDLOG_INFO("seq_no: {}, {}", topic_name, ptr->seq_no);
+            });
+
+        m_pub_sub_service->recover([]() mutable {
+            std::unordered_map<
+                std::string,
+                std::vector<std::shared_ptr<agrpc::Message<std::string>>>>
+                cache;
+            using namespace boost::interprocess;
+            scoped_lock<named_mutex> lock(mtx);
+            MyVector* myvector = segment.find<MyVector>("MyVector").first;
+            if (myvector == nullptr)
+                return cache;
+            SPDLOG_INFO("recover myvector");
+            for (auto& ptr : *myvector) {
+                std::cout << "recover:" << ptr.seq_no << std::endl;
+                auto p = std::make_shared<agrpc::Message<std::string>>(
+                    std::make_shared<std::string>(ptr.data.begin(),
+                                                  ptr.data.end()),
+                    ptr.seq_no);
+                cache[ptr.topic_name].emplace_back(p);
+            }
+            return cache;
+        });
+
         m_grpc_server = std::make_unique<agrpc::GrpcServer>(m_config);
         m_grpc_server->setExampleOrderRpcCallback(
             std::bind_front(&TestServer::orderRpcHandler, this));
@@ -243,24 +329,24 @@ struct TestServer {
         m_grpc_server->setExampleGetOrderSeqNoRpcCallback(
             std::bind_front(&TestServer::getOrderSeqNoRpcHandler, this));
         m_grpc_server->setExampleServerStreamingRpcCallback(
-            [](agrpc::ExampleServerStreamingRPC& rpc,
-               fantasy::v1::OrderRequest& request)
-                -> boost::asio::awaitable<void> { co_return; });
+            [](agrpc::ExampleServerStreamingRPC&,
+               fantasy::v1::OrderRequest&) -> boost::asio::awaitable<void> {
+                co_return;
+            });
         m_grpc_server->setExampleClientStreamingRpcCallback(
-            [](agrpc::ExampleClientStreamingRPC& rpc)
+            [](agrpc::ExampleClientStreamingRPC&)
                 -> boost::asio::awaitable<void> { co_return; });
         m_grpc_server->start();
 
-        std::weak_ptr<agrpc::PubSubService> pub_sub_service = m_pub_sub_service;
+        std::weak_ptr<agrpc::PubSubService<std::string>> pub_sub_service =
+            m_pub_sub_service;
         std::thread([=] {
             uint32_t count = 0;
             while (true) {
                 if (auto sp = pub_sub_service.lock()) {
                     for (int i = 0; i < 2; i++) {
-                        sp->publish("001",
-                                    std::make_shared<std::string>(
-                                        std::string{"hello_"} +
-                                        std::to_string(count)));
+                        auto ss = std::string{"hello_"} + std::to_string(count);
+                        sp->publish("001", std::move(ss));
                         count++;
                         // std::this_thread::sleep_for(std::chrono::microseconds(25));
                         std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -301,7 +387,7 @@ struct TestServer {
     }
 
     std::shared_ptr<agrpc::GrpcServer> m_grpc_server;
-    std::shared_ptr<agrpc::PubSubService> m_pub_sub_service;
+    std::shared_ptr<agrpc::PubSubService<std::string>> m_pub_sub_service;
     agrpc::GrpcConfig m_config;
     bool m_stop{false};
     int32_t m_channel_size{1000000};

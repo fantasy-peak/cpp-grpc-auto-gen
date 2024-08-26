@@ -17,7 +17,7 @@ message(
 )
 include(FetchContent)
 set(FETCHCONTENT_QUIET OFF)
-set(BOOST_INCLUDE_LIBRARIES regex;asio;circular_buffer;signals2)
+set(BOOST_INCLUDE_LIBRARIES regex;asio;circular_buffer;signals2;interprocess)
 FetchContent_Declare(
   Boost
   URL https://github.com/boostorg/boost/releases/download/boost-1.86.0.beta1/boost-1.86.0.beta1-cmake.tar.gz
@@ -50,6 +50,7 @@ add_compile_options(
   -pedantic-errors
   -O2
   -Wall
+  -Wextra
   -Wno-missing-field-initializers
   -Wformat
   -Wfloat-equal
@@ -68,7 +69,7 @@ add_executable(grpc-server ${SRCS})
 target_include_directories(grpc-server BEFORE PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_add_protobuf(grpc-server example.proto)
 target_add_protobuf(grpc-server health.proto)
-target_link_libraries(grpc-server PUBLIC asan Boost::asio Boost::circular_buffer Boost::signals2 ssl crypto asio-grpc spdlog::spdlog
+target_link_libraries(grpc-server PUBLIC asan Boost::asio Boost::circular_buffer Boost::signals2 ssl crypto asio-grpc spdlog::spdlog Boost::interprocess
                                     pthread dl)
 
 

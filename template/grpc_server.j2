@@ -60,15 +60,6 @@ namespace {{grpc.namespace}} {
 namespace asio = boost::asio;
 #endif
 
-template <typename T>
-struct is_shared_ptr : std::false_type {};
-
-template <typename T>
-struct is_shared_ptr<std::shared_ptr<T>> : std::true_type {};
-
-template <typename T>
-constexpr bool is_shared_ptr_v = is_shared_ptr<T>::value;
-
 struct RethrowFirstArg {
     template <class... T>
     void operator()(std::exception_ptr ep, T&&...) {
@@ -81,18 +72,23 @@ struct RethrowFirstArg {
     void operator()(T&&...) {}
 };
 
+template <typename T>
 struct Message {
-    std::shared_ptr<void> info_ptr;
+    std::shared_ptr<T> info_ptr;
     uint64_t seq_no;
 };
 
-class Topic final : public std::enable_shared_from_this<Topic> {
-public:
+template <typename T>
+class Topic final : public std::enable_shared_from_this<Topic<T>> {
+  public:
 #ifdef USE_BOOST_CIRCULAR_BUFFER
-    explicit Topic(std::size_t count) : m_buffer(count) {
+    explicit Topic(const std::string& topic, std::size_t count) 
+        : m_topic(topic)
+        , m_buffer(count) {
     }
 #else
-    explicit Topic(std::size_t count) {
+    explicit Topic(const std::string& topic, std::size_t count)
+    : m_topic(topic) {
         m_buffer.reserve(count);
     }
 #endif
@@ -107,7 +103,7 @@ public:
     Topic& operator=(Topic&&) = delete;
 
     struct ScopedConn {
-        ScopedConn(std::weak_ptr<Topic> topic_ptr, uint64_t call_id)
+        ScopedConn(std::weak_ptr<Topic<T>> topic_ptr, uint64_t call_id)
             : m_topic_ptr(std::move(topic_ptr)), m_call_id(call_id) {
         }
 
@@ -121,25 +117,41 @@ public:
                 sp->erase(m_call_id);
         }
 
-        std::weak_ptr<Topic> m_topic_ptr;
+        std::weak_ptr<Topic<T>> m_topic_ptr;
         uint64_t m_call_id;
     };
 
-    template <typename T> requires is_shared_ptr_v<T>
-    void publish(T&& ptr) {
+    void setNoticeCallback(auto& cb) {
         std::lock_guard lk(m_mutex);
-        auto message_ptr = std::make_shared<Message>(std::forward<T>(ptr), m_seq_no++);
+        m_notice_cb = cb;
+    }
+
+    void recover(const std::vector<std::shared_ptr<Message<T>>>& vec) {
+        std::lock_guard lk(m_mutex);
+        if (vec.empty())
+            return;
+        m_buffer.insert(m_buffer.end(), vec.begin(), vec.end());
+        m_seq_no = vec.back()->seq_no;
+        m_seq_no++;
+    }
+
+    void publish(std::shared_ptr<T> ptr) {
+        std::lock_guard lk(m_mutex);
+        auto message_ptr =
+            std::make_shared<Message<T>>(std::move(ptr), m_seq_no++);
         m_buffer.push_back(std::move(message_ptr));
         auto& buffer_ptr = m_buffer.back();
+        if (m_notice_cb)
+            m_notice_cb(m_topic, buffer_ptr);
         for (auto& [call_id, sig] : m_sig)
             sig(buffer_ptr);
     }
 
-    auto subscribe(uint64_t seq_no, std::function<void(const std::shared_ptr<Message>&)> cb) {
+    auto subscribe(uint64_t seq_no, std::function<void(const std::shared_ptr<Message<T>>&)> cb) {
         std::lock_guard lk(m_mutex);
-        auto scoped_connection_ptr = std::make_unique<ScopedConn>(shared_from_this(), m_call_id);
+        auto scoped_connection_ptr = std::make_unique<ScopedConn>(this->shared_from_this(), m_call_id);
         m_sig.emplace(m_call_id++, std::move(cb));
-        std::vector<std::shared_ptr<Message>> msg_vec;
+        std::vector<std::shared_ptr<Message<T>>> msg_vec;
         auto it = std::ranges::find_if(m_buffer, [&](auto& ptr) {
             return seq_no == ptr->seq_no;
         });
@@ -152,14 +164,18 @@ public:
         return std::make_tuple(std::move(msg_vec), std::move(scoped_connection_ptr));
     }
 #ifdef USE_BOOST_CIRCULAR_BUFFER
-    auto subscribe(std::function<void(const std::shared_ptr<Message>&)> cb,
-        const std::function<std::vector<std::shared_ptr<Message>>(const boost::circular_buffer<std::shared_ptr<Message>>&)>& filter) {
+    auto subscribe(
+        std::function<void(const std::shared_ptr<Message<T>>&)> cb,
+        const std::function<std::vector<std::shared_ptr<Message<T>>>(
+            const boost::circular_buffer<std::shared_ptr<Message<T>>>&)>& filter) {
 #else
-    auto subscribe(std::function<void(const std::shared_ptr<Message>&)> cb,
-        const std::function<std::vector<std::shared_ptr<Message>>(const std::vector<std::shared_ptr<Message>>&)>& filter) {
+    auto subscribe(
+        std::function<void(const std::shared_ptr<Message<T>>&)> cb,
+        const std::function<std::vector<std::shared_ptr<Message<T>>>(
+            const std::vector<std::shared_ptr<Message<T>>>&)>& filter) {
 #endif
         std::lock_guard lk(m_mutex);
-        auto scoped_connection_ptr = std::make_unique<ScopedConn>(shared_from_this(), m_call_id);
+        auto scoped_connection_ptr = std::make_unique<ScopedConn>(this->shared_from_this(), m_call_id);
         m_sig.emplace(m_call_id++, std::move(cb));
         auto msg_vec = filter(m_buffer);
         return std::make_tuple(std::move(msg_vec), std::move(scoped_connection_ptr));
@@ -171,27 +187,29 @@ public:
         m_buffer.clear();
     }
 
-private:
+  private:
     void erase(uint64_t call_id) {
         std::lock_guard lk(m_mutex);
         m_sig.erase(call_id);
     }
 
+    std::string m_topic;
 #ifdef USE_BOOST_CIRCULAR_BUFFER
-    boost::circular_buffer<std::shared_ptr<Message>> m_buffer;
+    boost::circular_buffer<std::shared_ptr<Message<T>>> m_buffer;
 #else
-    std::vector<std::shared_ptr<Message>> m_buffer;
+    std::vector<std::shared_ptr<Message<T>>> m_buffer;
 #endif
     std::mutex m_mutex;
-    std::unordered_map<uint64_t, std::function<void(const std::shared_ptr<Message>&)>> m_sig;
+    std::unordered_map<uint64_t, std::function<void(const std::shared_ptr<Message<T>>&)>> m_sig;
     uint64_t m_call_id{0};
     uint64_t m_seq_no{0};
+    std::function<void(const std::string&, const std::shared_ptr<Message<T>>&)> m_notice_cb;
 };
 
+template <typename T>
 class PubSubService final {
-public:
-    explicit PubSubService(std::size_t count = 1000000)
-        : m_size(count) {
+  public:
+    explicit PubSubService(std::size_t count = 1000000) : m_size(count) {
     }
 
     ~PubSubService() {
@@ -204,38 +222,52 @@ public:
     PubSubService& operator=(const PubSubService&) = delete;
     PubSubService& operator=(PubSubService&&) = delete;
 
+    void setNoticeCallback(const std::function<void(const std::string&, const std::shared_ptr<Message<T>>&)>& cb) {
+        m_notice_cb = cb;
+    }
+
+    void recover(std::function<std::unordered_map<std::string, std::vector<std::shared_ptr<Message<T>>>>()> cb) {
+        auto data = cb();
+        for (auto& [topic, vec] : data) {
+            auto topic_ptr = getTopicPtr(topic);
+            topic_ptr->recover(vec);
+        }
+    }
+
     decltype(auto) subscribe(
         const std::string& topic,
         uint64_t seq_no,
-        std::function<void(const std::shared_ptr<Message>&)> cb) {
+        std::function<void(const std::shared_ptr<Message<T>>&)> cb) {
         auto topic_ptr = getTopicPtr(topic);
         return topic_ptr->subscribe(seq_no, std::move(cb));
     }
 #ifdef USE_BOOST_CIRCULAR_BUFFER
     decltype(auto) subscribe(
         const std::string& topic,
-        std::function<void(const std::shared_ptr<Message>&)> cb,
-        std::function<std::vector<std::shared_ptr<Message>>(const boost::circular_buffer<std::shared_ptr<Message>>&)> filter) {
+        std::function<void(const std::shared_ptr<Message<T>>&)> cb,
+        std::function<std::vector<std::shared_ptr<Message<T>>>(
+            const boost::circular_buffer<std::shared_ptr<Message<T>>>&)> filter) {
 #else
     decltype(auto) subscribe(
         const std::string& topic,
-        std::function<void(const std::shared_ptr<Message>&)> cb,
-        std::function<std::vector<std::shared_ptr<Message>>(const std::vector<std::shared_ptr<Message>>&)> filter) {
+        std::function<void(const std::shared_ptr<Message<T>>&)> cb,
+        std::function<std::vector<std::shared_ptr<Message<T>>>(
+            const std::vector<std::shared_ptr<Message<T>>>&)> filter) {
 #endif
         auto topic_ptr = getTopicPtr(topic);
         return topic_ptr->subscribe(std::move(cb), filter);
     }
 
-    template <typename T>
-    void publish(const std::string& topic, T&& message) {
+    template <typename Input> requires std::is_same_v<std::decay_t<Input>, T>
+    void publish(const std::string& topic, Input&& in) {
         auto topic_ptr = getTopicPtr(topic);
-        topic_ptr->publish(std::forward<T>(message));
+        topic_ptr->publish(std::make_shared<std::decay_t<Input>>(std::forward<Input>(in)));
         return;
     }
 
-private:
-    std::shared_ptr<Topic> getTopicPtr(const std::string& topic) {
-        std::shared_ptr<Topic> topic_ptr = nullptr;
+  private:
+    std::shared_ptr<Topic<T>> getTopicPtr(const std::string& topic) {
+        std::shared_ptr<Topic<T>> topic_ptr;
         {
             std::shared_lock<std::shared_mutex> lock(m_mutex);
             auto iter = m_topic_map.find(topic);
@@ -250,14 +282,17 @@ private:
             topic_ptr = iter->second;
             return topic_ptr;
         }
-        topic_ptr = std::make_shared<Topic>(m_size);
+        topic_ptr = std::make_shared<Topic<T>>(topic, m_size);
+        if (m_notice_cb)
+            topic_ptr->setNoticeCallback(m_notice_cb);
         m_topic_map[topic] = topic_ptr;
         return topic_ptr;
     }
 
     std::size_t m_size;
-    std::unordered_map<std::string, std::shared_ptr<Topic>> m_topic_map;
+    std::unordered_map<std::string, std::shared_ptr<Topic<T>>> m_topic_map;
     mutable std::shared_mutex m_mutex;
+    std::function<void(const std::string&, const std::shared_ptr<Message<T>>&)> m_notice_cb;
 };
 
 struct GrpcConfig {
@@ -283,9 +318,11 @@ using {{service_name}}{{interface.name}}RPC = AwaitableServerRPC<&{{service_name
 {% endfor -%}
 
 #ifdef AGRPC_BOOST_ASIO
-using ConcurrentChannel = asio::experimental::concurrent_channel<void(boost::system::error_code, std::shared_ptr<Message>)>;
+template <typename T>
+using ConcurrentChannel = asio::experimental::concurrent_channel<void(boost::system::error_code, std::shared_ptr<Message<T>>)>;
 #else
-using ConcurrentChannel = asio::experimental::concurrent_channel<void(asio::error_code, std::shared_ptr<Message>)>;
+template <typename T>
+using ConcurrentChannel = asio::experimental::concurrent_channel<void(asio::error_code, std::shared_ptr<Message<T>>)>;
 #endif
 
 class {{grpc.class_name}} final {
