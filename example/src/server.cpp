@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -131,7 +132,6 @@ struct TestServer {
         auto next_deadline =
             std::chrono::system_clock::now() + std::chrono::seconds(2);
         std::unique_ptr<agrpc::Topic<std::string>::ScopedConn> scoped_conn_ptr;
-
         while (true) {
             auto [completion_order,
                   read_error_code,
@@ -152,9 +152,15 @@ struct TestServer {
             {
                 if (read_ok) {
                     auto no = std::stoul(request.notice_seq_no());
-                    scoped_conn_ptr.reset();
+                    std::optional<uint64_t> call_id;
+                    if (scoped_conn_ptr) {
+                        call_id = scoped_conn_ptr->callId();
+                        // no need remove task
+                        scoped_conn_ptr->reset();
+                    }
 #if 1
-                    auto [notice_store, ptr] = m_pub_sub_service->subscribe(
+                    auto [notice_store, ptr] = m_pub_sub_service->resubscribe(
+                        call_id,
                         "001",
                         no,
                         [=](const std::shared_ptr<agrpc::Message<std::string>>&

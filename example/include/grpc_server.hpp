@@ -112,12 +112,23 @@ class Topic final : public std::enable_shared_from_this<Topic<T>> {
         ScopedConn& operator=(ScopedConn&&) = delete;
 
         ~ScopedConn() {
+            if (m_reset)
+                return;
             if (auto sp = m_topic_ptr.lock())
                 sp->erase(m_call_id);
         }
 
+        auto callId() {
+            return m_call_id;
+        }
+
+        auto reset() {
+            m_reset = true;
+        }
+
         std::weak_ptr<Topic<T>> m_topic_ptr;
         uint64_t m_call_id;
+        bool m_reset{false};
     };
 
     void setNoticeCallback(auto& cb) {
@@ -149,23 +160,19 @@ class Topic final : public std::enable_shared_from_this<Topic<T>> {
     auto subscribe(uint64_t seq_no,
                    std::function<void(const std::shared_ptr<Message<T>>&)> cb) {
         std::lock_guard lk(m_mutex);
-        auto scoped_connection_ptr =
-            std::make_unique<ScopedConn>(this->shared_from_this(), m_call_id);
-        m_sig.emplace(m_call_id++, std::move(cb));
-        std::vector<std::shared_ptr<Message<T>>> msg_vec;
-        auto it = std::ranges::find_if(m_buffer, [&](auto& ptr) {
-            return seq_no == ptr->seq_no;
-        });
-        if (it == m_buffer.end())
-            return std::make_tuple(std::move(msg_vec),
-                                   std::move(scoped_connection_ptr));
-        msg_vec.reserve(std::distance(it, m_buffer.end()));
-        std::for_each(it, m_buffer.end(), [&](auto& ptr) {
-            msg_vec.emplace_back(ptr);
-        });
-        return std::make_tuple(std::move(msg_vec),
-                               std::move(scoped_connection_ptr));
+        return findAndSubscribe(seq_no, std::move(cb));
     }
+
+    auto resubscribe(
+        std::optional<uint64_t> call_id,
+        uint64_t seq_no,
+        std::function<void(const std::shared_ptr<Message<T>>&)> cb) {
+        std::lock_guard lk(m_mutex);
+        if (call_id.has_value())
+            m_sig.erase(call_id.value());
+        return findAndSubscribe(seq_no, std::move(cb));
+    }
+
 #ifdef USE_BOOST_CIRCULAR_BUFFER
     auto subscribe(
         std::function<void(const std::shared_ptr<Message<T>>&)> cb,
@@ -187,6 +194,31 @@ class Topic final : public std::enable_shared_from_this<Topic<T>> {
                                std::move(scoped_connection_ptr));
     }
 
+#ifdef USE_BOOST_CIRCULAR_BUFFER
+    auto resubscribe(
+        std::optional<uint64_t> call_id,
+        std::function<void(const std::shared_ptr<Message<T>>&)> cb,
+        const std::function<std::vector<std::shared_ptr<Message<T>>>(
+            const boost::circular_buffer<std::shared_ptr<Message<T>>>&)>&
+            filter) {
+#else
+    auto resubscribe(
+        std::optional<uint64_t> call_id,
+        std::function<void(const std::shared_ptr<Message<T>>&)> cb,
+        const std::function<std::vector<std::shared_ptr<Message<T>>>(
+            const std::vector<std::shared_ptr<Message<T>>>&)>& filter) {
+#endif
+        std::lock_guard lk(m_mutex);
+        if (call_id.has_value())
+            m_sig.erase(call_id.value());
+        auto scoped_connection_ptr =
+            std::make_unique<ScopedConn>(this->shared_from_this(), m_call_id);
+        m_sig.emplace(m_call_id++, std::move(cb));
+        auto msg_vec = filter(m_buffer);
+        return std::make_tuple(std::move(msg_vec),
+                               std::move(scoped_connection_ptr));
+    }
+
     void clear() {
         std::lock_guard lk(m_mutex);
         m_sig.clear();
@@ -194,6 +226,27 @@ class Topic final : public std::enable_shared_from_this<Topic<T>> {
     }
 
   private:
+    auto findAndSubscribe(
+        uint64_t seq_no,
+        std::function<void(const std::shared_ptr<Message<T>>&)> cb) {
+        auto scoped_connection_ptr =
+            std::make_unique<ScopedConn>(this->shared_from_this(), m_call_id);
+        m_sig.emplace(m_call_id++, std::move(cb));
+        std::vector<std::shared_ptr<Message<T>>> msg_vec;
+        auto it = std::ranges::find_if(m_buffer, [&](auto& ptr) {
+            return seq_no == ptr->seq_no;
+        });
+        if (it == m_buffer.end())
+            return std::make_tuple(std::move(msg_vec),
+                                   std::move(scoped_connection_ptr));
+        msg_vec.reserve(std::distance(it, m_buffer.end()));
+        std::for_each(it, m_buffer.end(), [&](auto& ptr) {
+            msg_vec.emplace_back(ptr);
+        });
+        return std::make_tuple(std::move(msg_vec),
+                               std::move(scoped_connection_ptr));
+    }
+
     void erase(uint64_t call_id) {
         std::lock_guard lk(m_mutex);
         m_sig.erase(call_id);
@@ -254,6 +307,18 @@ class PubSubService final {
         auto topic_ptr = getTopicPtr(topic);
         return topic_ptr->subscribe(seq_no, std::move(cb));
     }
+
+    decltype(auto) resubscribe(
+        std::optional<uint64_t> call_id,
+        const std::string& topic,
+        uint64_t seq_no,
+        std::function<void(const std::shared_ptr<Message<T>>&)> cb) {
+        auto topic_ptr = getTopicPtr(topic);
+        return topic_ptr->resubscribe(std::move(call_id),
+                                      seq_no,
+                                      std::move(cb));
+    }
+
 #ifdef USE_BOOST_CIRCULAR_BUFFER
     decltype(auto) subscribe(
         const std::string& topic,
@@ -270,6 +335,28 @@ class PubSubService final {
 #endif
         auto topic_ptr = getTopicPtr(topic);
         return topic_ptr->subscribe(std::move(cb), filter);
+    }
+
+#ifdef USE_BOOST_CIRCULAR_BUFFER
+    decltype(auto) resubscribe(
+        std::optional<uint64_t> call_id,
+        const std::string& topic,
+        std::function<void(const std::shared_ptr<Message<T>>&)> cb,
+        std::function<std::vector<std::shared_ptr<Message<T>>>(
+            const boost::circular_buffer<std::shared_ptr<Message<T>>>&)>
+            filter) {
+#else
+    decltype(auto) resubscribe(
+        std::optional<uint64_t> call_id,
+        const std::string& topic,
+        std::function<void(const std::shared_ptr<Message<T>>&)> cb,
+        std::function<std::vector<std::shared_ptr<Message<T>>>(
+            const std::vector<std::shared_ptr<Message<T>>>&)> filter) {
+#endif
+        auto topic_ptr = getTopicPtr(topic);
+        return topic_ptr->resubscribe(std::move(call_id),
+                                      std::move(cb),
+                                      filter);
     }
 
     template <typename Input>
