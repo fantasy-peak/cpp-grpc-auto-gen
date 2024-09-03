@@ -156,6 +156,23 @@ int main(int argc, const char** argv) {
         },
         fantasy::RethrowFirstArg{});
 
+    asio::co_spawn(
+        grpc_context,
+        [&]() -> asio::awaitable<void> {
+            using RPC = fantasy::AwaitableClientRPC<
+                &fantasy::v1::Example::Stub::PrepareAsyncOrder>;
+            grpc::ClientContext client_context;
+            fantasy::v1::OrderRequest request;
+            request.set_order_seq_no("2000sssssssssssss");
+            fantasy::v1::OrderResponse response;
+            auto status = co_await RPC::request(
+                grpc_context, stub, client_context, request, response);
+            spdlog::info("OrderRequest: {} {}",
+                         status.ok(),
+                         response.order_seq_no());
+        },
+        fantasy::RethrowFirstArg{});
+
     asio::post(io_context, [&] {
         agrpc::run(grpc_context, io_context, [&] {
             return grpc_context.is_stopped();

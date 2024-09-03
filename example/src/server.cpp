@@ -1,6 +1,7 @@
 /*#define AGRPC_STANDALONE_ASIO*/
 
 #include <unistd.h>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -51,20 +52,17 @@ enum Status {
     DUP,
 };
 
-template <typename CompletionToken>
+template <boost::asio::completion_token_for<void(Status)> CompletionToken>
 auto checkClOrderId(const std::string& str, CompletionToken&& token) {
     return boost::asio::async_initiate<CompletionToken, void(Status)>(
         []<typename Handler>(Handler&& handler,
                              const std::string& str) mutable {
-            auto handler_ptr =
-                std::make_shared<Handler>(std::forward<Handler>(handler));
-            std::thread([handler_ptr = std::move(handler_ptr), &str] {
-                auto ex = boost::asio::get_associated_executor(*handler_ptr);
+            std::thread([handler = std::forward<Handler>(handler),
+                         &str]() mutable {
+                auto ex = boost::asio::get_associated_executor(handler);
                 boost::asio::post(ex,
-                                  [handler_ptr = std::move(
-                                       handler_ptr)]() mutable -> void {
-                                      (*handler_ptr)(Status::OK);
-                                  });
+                                  [handler = std::move(handler)]() mutable
+                                      -> void { handler(Status::OK); });
             }).detach();
         },
         std::forward<CompletionToken>(token),
@@ -99,6 +97,12 @@ struct TestServer {
         agrpc::ExampleOrderRPC& rpc,
         fantasy::v1::OrderRequest& /* request */) {
         SPDLOG_INFO("orderRpcHandler");
+        agrpc::Alarm alarm{rpc.get_executor()};
+        auto next_deadline =
+            std::chrono::system_clock::now() + std::chrono::seconds(2);
+        auto wait_ok =
+            co_await alarm.wait(next_deadline, boost::asio::use_awaitable);
+        SPDLOG_INFO("orderRpcHandler wait_ok: {}", wait_ok);
         fantasy::v1::OrderResponse response;
         response.set_order_seq_no("abc-OrderRequest");
         co_await rpc.finish(response, grpc::Status::OK);
@@ -252,16 +256,14 @@ struct TestServer {
                 next_deadline =
                     std::chrono::system_clock::now() + std::chrono::seconds(2);
             } else if (2 == completion_order[0]) {
-                if (!error_code) {
-                    fantasy::v1::NoticeResponse response;
-                    auto pp = std::static_pointer_cast<std::string>(
-                        notice_ptr->info_ptr);
-                    response.set_notice_seq_no(*pp);
-                    co_await rpc.write(response, boost::asio::use_awaitable);
-                } else {
-                    SPDLOG_INFO("{}", error_code.message());
-                    exit(1);
+                if (error_code) {
+                    SPDLOG_ERROR("{}", error_code.message());
+                    co_await rpc.finish(grpc::Status::OK);
+                    break;
                 }
+                fantasy::v1::NoticeResponse response;
+                response.set_notice_seq_no(*notice_ptr->info_ptr);
+                co_await rpc.write(response, boost::asio::use_awaitable);
             } else if (3 == completion_order[0]) {
                 // recv stop
                 SPDLOG_INFO("Receive exit signal!!!");
@@ -277,7 +279,7 @@ struct TestServer {
     void init() {
         m_config = agrpc::GrpcConfig{
             .host = "0.0.0.0:5566",
-            .thread_count = 2,
+            .thread_count = 1,
         };
         // shared_memory_object::remove("MySharedMemory");
         static boost::interprocess::managed_shared_memory segment(
