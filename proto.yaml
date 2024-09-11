@@ -1,5 +1,5 @@
 ---
-namespace: agrpc
+namespace: peak
 class_name: GrpcServer
 include_grpc_files: [example.grpc.pb.h, example.pb.h]
 package: fantasy.v1

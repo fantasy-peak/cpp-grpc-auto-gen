@@ -77,7 +77,7 @@ struct TestServer {
     ~TestServer() = default;
 
     boost::asio::awaitable<void> getOrderSeqNoRpcHandler(
-        agrpc::ExampleGetOrderSeqNoRPC& rpc,
+        peak::ExampleGetOrderSeqNoRPC& rpc,
         fantasy::v1::GetOrderSeqNoRequest& /* request */) {
         SPDLOG_INFO("GetOrderSeqNo");
         fantasy::v1::GetOrderSeqNoResponse response;
@@ -94,7 +94,7 @@ struct TestServer {
     }
 
     boost::asio::awaitable<void> orderRpcHandler(
-        agrpc::ExampleOrderRPC& rpc,
+        peak::ExampleOrderRPC& rpc,
         fantasy::v1::OrderRequest& /* request */) {
         SPDLOG_INFO("orderRpcHandler");
         agrpc::Alarm alarm{rpc.get_executor()};
@@ -109,7 +109,7 @@ struct TestServer {
     }
 
     boost::asio::awaitable<void> orderNoticeHandler(
-        agrpc::ExampleNoticeRPC& rpc) {
+        peak::ExampleNoticeRPC& rpc) {
         SPDLOG_INFO("orderNoticeHandler");
 
         fantasy::v1::NoticeRequest request;
@@ -119,7 +119,7 @@ struct TestServer {
         agrpc::Waiter<void(bool)> waiter;
         waiter.initiate(agrpc::read, rpc, request);
 
-        auto chan = std::make_shared<agrpc::ConcurrentChannel<std::string>>(
+        auto chan = std::make_shared<peak::ConcurrentChannel<std::string>>(
             rpc.get_executor(), m_channel_size);
         auto stop_chan = std::make_shared<StopChannel>(rpc.get_executor(), 1);
 
@@ -135,7 +135,7 @@ struct TestServer {
 
         auto next_deadline =
             std::chrono::system_clock::now() + std::chrono::seconds(2);
-        std::unique_ptr<agrpc::Topic<std::string>::ScopedConn> scoped_conn_ptr;
+        std::unique_ptr<peak::Topic<std::string>::ScopedConn> scoped_conn_ptr;
         while (true) {
             auto [completion_order,
                   read_error_code,
@@ -167,7 +167,7 @@ struct TestServer {
                         call_id,
                         "001",
                         no,
-                        [=](const std::shared_ptr<agrpc::Message<std::string>>&
+                        [=](const std::shared_ptr<peak::Message<std::string>>&
                                 ptr) {
                             auto ret =
                                 chan->try_send(boost::system::error_code{},
@@ -277,7 +277,7 @@ struct TestServer {
     }
 
     void init() {
-        m_config = agrpc::GrpcConfig{
+        m_config = peak::GrpcConfig{
             .host = "0.0.0.0:5566",
             .thread_count = 1,
         };
@@ -290,12 +290,11 @@ struct TestServer {
             "your_globally_unique_mutex_name");
 
         m_pub_sub_service =
-            std::make_shared<agrpc::PubSubService<std::string>>(100000);
+            std::make_shared<peak::PubSubService<std::string>>(100000);
 
         m_pub_sub_service->setNoticeCallback(
             [](const std::string& topic_name,
-               const std::shared_ptr<agrpc::Message<std::string>>&
-                   ptr) mutable {
+               const std::shared_ptr<peak::Message<std::string>>& ptr) mutable {
                 using namespace boost::interprocess;
                 scoped_lock<named_mutex> lock(mtx);
                 auto* myvector = segment.find_or_construct<MyVector>(
@@ -310,7 +309,7 @@ struct TestServer {
         m_pub_sub_service->recover([]() mutable {
             std::unordered_map<
                 std::string,
-                std::vector<std::shared_ptr<agrpc::Message<std::string>>>>
+                std::vector<std::shared_ptr<peak::Message<std::string>>>>
                 cache;
             using namespace boost::interprocess;
             scoped_lock<named_mutex> lock(mtx);
@@ -320,7 +319,7 @@ struct TestServer {
             SPDLOG_INFO("recover myvector");
             for (auto& ptr : *myvector) {
                 std::cout << "recover:" << ptr.seq_no << std::endl;
-                auto p = std::make_shared<agrpc::Message<std::string>>(
+                auto p = std::make_shared<peak::Message<std::string>>(
                     std::make_shared<std::string>(ptr.data.begin(),
                                                   ptr.data.end()),
                     ptr.seq_no);
@@ -329,7 +328,7 @@ struct TestServer {
             return cache;
         });
 
-        m_grpc_server = std::make_unique<agrpc::GrpcServer>(m_config);
+        m_grpc_server = std::make_unique<peak::GrpcServer>(m_config);
         m_grpc_server->setExampleOrderRpcCallback(
             std::bind_front(&TestServer::orderRpcHandler, this));
         m_grpc_server->setExampleNoticeRpcCallback(
@@ -337,16 +336,16 @@ struct TestServer {
         m_grpc_server->setExampleGetOrderSeqNoRpcCallback(
             std::bind_front(&TestServer::getOrderSeqNoRpcHandler, this));
         m_grpc_server->setExampleServerStreamingRpcCallback(
-            [](agrpc::ExampleServerStreamingRPC&,
+            [](peak::ExampleServerStreamingRPC&,
                fantasy::v1::OrderRequest&) -> boost::asio::awaitable<void> {
                 co_return;
             });
         m_grpc_server->setExampleClientStreamingRpcCallback(
-            [](agrpc::ExampleClientStreamingRPC&)
+            [](peak::ExampleClientStreamingRPC&)
                 -> boost::asio::awaitable<void> { co_return; });
         m_grpc_server->start();
 
-        std::weak_ptr<agrpc::PubSubService<std::string>> pub_sub_service =
+        std::weak_ptr<peak::PubSubService<std::string>> pub_sub_service =
             m_pub_sub_service;
         std::thread([=] {
             uint32_t count = 0;
@@ -394,9 +393,9 @@ struct TestServer {
         m_grpc_server.reset();
     }
 
-    std::shared_ptr<agrpc::GrpcServer> m_grpc_server;
-    std::shared_ptr<agrpc::PubSubService<std::string>> m_pub_sub_service;
-    agrpc::GrpcConfig m_config;
+    std::shared_ptr<peak::GrpcServer> m_grpc_server;
+    std::shared_ptr<peak::PubSubService<std::string>> m_pub_sub_service;
+    peak::GrpcConfig m_config;
     bool m_stop{false};
     int32_t m_channel_size{1000000};
     std::mutex m_stop_mutex;

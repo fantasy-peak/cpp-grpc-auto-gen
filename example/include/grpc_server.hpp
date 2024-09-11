@@ -53,7 +53,7 @@
 #include <agrpc/asio_grpc.hpp>
 #include <agrpc/health_check_service.hpp>
 
-namespace agrpc {
+namespace peak {
 
 #ifdef AGRPC_BOOST_ASIO
 namespace asio = boost::asio;
@@ -630,4 +630,63 @@ class GrpcServer final {
     std::vector<std::thread> m_threads;
 };
 
-}  // namespace agrpc
+}  // namespace peak
+
+/* example
+
+#ifndef AGRPC_BOOST_ASIO
+#define AGRPC_BOOST_ASIO 1
+#endif
+
+#ifndef USE_BOOST_CIRCULAR_BUFFER
+#define USE_BOOST_CIRCULAR_BUFFER 1
+#endif
+
+#include <grpc_server.hpp>
+
+int main() {
+    peak::GrpcConfig config{
+        .host = "0.0.0.0:5566",
+        .thread_count = 1,
+        .grpc_arg_keepalive_time_ms = 10000,
+        .grpc_arg_keepalive_timeout_ms = 10000,
+        .grpc_arg_keepalive_permit_without_calls = 1,
+        .grpc_arg_http2_max_pings_without_data = 0,
+        .grpc_arg_http2_min_sent_ping_interval_without_data_ms = 10000,
+        .grpc_arg_http2_min_recv_ping_interval_without_data_ms = 5000,
+        .min_pollers = 2,
+        .max_pollers = 4,
+    };
+    auto m_grpc_server = std::make_unique<peak::GrpcServer>(config);
+    namespace asio = boost::asio;
+    m_grpc_server->setExampleNoticeRpcCallback(
+        [] (peak::ExampleNoticeRPC& rpc) -> asio::awaitable<void> {
+            (void)rpc;
+            co_return;
+        });
+    m_grpc_server->setExampleOrderRpcCallback(
+        [] (peak::ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request) ->
+asio::awaitable<void> { (void)rpc; (void)request; co_return;
+        });
+    m_grpc_server->setExampleGetOrderSeqNoRpcCallback(
+        [] (peak::ExampleGetOrderSeqNoRPC& rpc,
+fantasy::v1::GetOrderSeqNoRequest& request) -> asio::awaitable<void> {
+            (void)rpc;
+            (void)request;
+            co_return;
+        });
+    m_grpc_server->setExampleServerStreamingRpcCallback(
+        [] (peak::ExampleServerStreamingRPC& rpc, fantasy::v1::OrderRequest&
+request) -> asio::awaitable<void> { (void)rpc; (void)request; co_return;
+        });
+    m_grpc_server->setExampleClientStreamingRpcCallback(
+        [] (peak::ExampleClientStreamingRPC& rpc) -> asio::awaitable<void> {
+            (void)rpc;
+            co_return;
+        });
+    m_grpc_server->start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+    m_grpc_server->stop();
+    return 0;
+}
+*/
