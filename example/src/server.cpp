@@ -403,6 +403,18 @@ struct TestServer {
 };
 
 int main() {
+    try {
+        auto x = std::stoll("-1");
+        if (x < 0) {
+            SPDLOG_INFO("x < 0");
+        }
+        auto y = std::stoll("aaa");
+    } catch (const std::invalid_argument& ex) {
+        std::cout << "std::invalid_argument::what()：" << ex.what() << '\n';
+    } catch (const std::out_of_range& ex) {
+        std::cout << "std::out_of_range::what()：" << ex.what() << '\n';
+    }
+
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     auto logger = std::make_shared<spdlog::logger>("server",
                                                    spdlog::sinks_init_list(

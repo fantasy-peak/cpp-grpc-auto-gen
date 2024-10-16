@@ -236,9 +236,15 @@ class Topic final : public std::enable_shared_from_this<Topic<T>> {
         auto it = std::ranges::find_if(m_buffer, [&](auto& ptr) {
             return seq_no == ptr->seq_no;
         });
-        if (it == m_buffer.end())
-            return std::make_tuple(std::move(msg_vec),
-                                   std::move(scoped_connection_ptr));
+        if (it == m_buffer.end()) {
+            auto& front = m_buffer.front();
+            if (seq_no < front->seq_no) {
+                it = m_buffer.begin();
+            } else {
+                return std::make_tuple(std::move(msg_vec),
+                                       std::move(scoped_connection_ptr));
+            }
+        }
         msg_vec.reserve(std::distance(it, m_buffer.end()));
         std::for_each(it, m_buffer.end(), [&](auto& ptr) {
             msg_vec.emplace_back(ptr);
