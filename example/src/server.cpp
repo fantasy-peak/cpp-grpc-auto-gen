@@ -279,7 +279,7 @@ struct TestServer {
     void init() {
         m_config = peak::GrpcConfig{
             .host = "0.0.0.0:5566",
-            .thread_count = 1,
+            .thread_count = 10,
         };
         // shared_memory_object::remove("MySharedMemory");
         static boost::interprocess::managed_shared_memory segment(
@@ -336,8 +336,30 @@ struct TestServer {
         m_grpc_server->setExampleGetOrderSeqNoRpcCallback(
             std::bind_front(&TestServer::getOrderSeqNoRpcHandler, this));
         m_grpc_server->setExampleServerStreamingRpcCallback(
-            [](peak::ExampleServerStreamingRPC&,
-               fantasy::v1::OrderRequest&) -> boost::asio::awaitable<void> {
+            [](peak::ExampleServerStreamingRPC& rpc,
+               fantasy::v1::OrderRequest& request)
+                -> boost::asio::awaitable<void> {
+                SPDLOG_INFO("ExampleServerStreamingRPC: {}",
+                            request.order_seq_no());
+                agrpc::Alarm alarm{rpc.get_executor()};
+                for (int i = 0; i < 10; i++) {
+                    fantasy::v1::OrderResponse response;
+                    response.set_order_seq_no(
+                        std::string{"ExampleServerStreamingRPC_"} +
+                        std::to_string(i));
+                    auto next_deadline = std::chrono::system_clock::now() +
+                                         std::chrono::seconds(2);
+                    auto wait_ok =
+                        co_await alarm.wait(next_deadline,
+                                            boost::asio::use_awaitable);
+                    auto ret = co_await rpc.write(response);
+                    SPDLOG_INFO("ret: {}", ret);
+                    if (!ret) {
+                        SPDLOG_INFO("断开");
+                        break;
+                    }
+                }
+                co_await rpc.finish(grpc::Status::OK);
                 co_return;
             });
         m_grpc_server->setExampleClientStreamingRpcCallback(
@@ -404,6 +426,11 @@ struct TestServer {
 
 int main() {
     try {
+        std::string_view data{"ABCDEF"};
+        std::cout << data.substr(0, 3) << '\n';
+        if (data == "ABC") {
+            SPDLOG_INFO("==ABC");
+        }
         auto x = std::stoll("-1");
         if (x < 0) {
             SPDLOG_INFO("x < 0");

@@ -88,6 +88,32 @@ struct RethrowFirstArg {
 };
 }  // namespace fantasy
 
+asio::awaitable<void> make_server_streaming_request(
+    agrpc::GrpcContext& grpc_context,
+    ExampleStub& stub) {
+    using RPC =
+        fantasy::AwaitableClientRPC<&ExampleStub::PrepareAsyncServerStreaming>;
+
+    RPC rpc{grpc_context};
+    rpc.context().set_deadline(std::chrono::system_clock::now() +
+                               std::chrono::seconds(5));
+
+    fantasy::v1::OrderRequest request;
+    request.set_order_seq_no("5-server-stream");
+    co_await rpc.start(stub, request);
+
+    fantasy::v1::OrderResponse response;
+
+    while (co_await rpc.read(response)) {
+        spdlog::info("ClientRPC: Server streaming: {}",
+                     response.order_seq_no());
+        break;
+    }
+
+    const grpc::Status status = co_await rpc.finish();
+    spdlog::info("ClientRPC: Server streaming completed: {}", status.ok());
+}
+
 int main(int argc, const char** argv) {
     const auto host = std::string("127.0.0.1:5566");
 
@@ -102,6 +128,12 @@ int main(int argc, const char** argv) {
         grpc_context,
         [&]() -> asio::awaitable<void> {
             co_await make_bidirectional_streaming_request(grpc_context, stub);
+        },
+        fantasy::RethrowFirstArg{});
+    asio::co_spawn(
+        grpc_context,
+        [&]() -> asio::awaitable<void> {
+            co_await make_server_streaming_request(grpc_context, stub);
         },
         fantasy::RethrowFirstArg{});
 
