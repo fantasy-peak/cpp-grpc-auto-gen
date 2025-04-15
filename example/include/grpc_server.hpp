@@ -49,6 +49,7 @@
 
 #include <grpcpp/server.h>
 #include <grpcpp/server_builder.h>
+#include <grpcpp/ext/proto_server_reflection_plugin.h>
 
 #include <agrpc/asio_grpc.hpp>
 #include <agrpc/health_check_service.hpp>
@@ -408,12 +409,12 @@ class PubSubService final {
 struct GrpcConfig {
     std::string host;
     int32_t thread_count{2};
-    int32_t grpc_arg_keepalive_time_ms{10000};
-    int32_t grpc_arg_keepalive_timeout_ms{10000};
-    int32_t grpc_arg_keepalive_permit_without_calls{1};
-    int32_t grpc_arg_http2_max_pings_without_data{0};
-    int32_t grpc_arg_http2_min_sent_ping_interval_without_data_ms{10000};
-    int32_t grpc_arg_http2_min_recv_ping_interval_without_data_ms{5000};
+    int32_t keepalive_time_ms{10000};
+    int32_t keepalive_timeout_ms{10000};
+    int32_t keepalive_permit_without_calls{1};
+    int32_t http2_max_pings_without_data{0};
+    int32_t http2_min_sent_ping_interval_without_data_ms{10000};
+    int32_t http2_min_recv_ping_interval_without_data_ms{5000};
     std::optional<int32_t> min_pollers;
     std::optional<int32_t> max_pollers;
 };
@@ -465,6 +466,7 @@ class GrpcServer final {
         if (m_create_server_credentials)
             creds = m_create_server_credentials();
         builder.AddListeningPort(m_config.host, creds);
+        grpc::reflection::InitProtoReflectionServerBuilderPlugin();
 
         m_example_service = std::make_unique<ExampleService>();
         builder.RegisterService(m_example_service.get());
@@ -473,21 +475,19 @@ class GrpcServer final {
         grpc::ChannelArguments args;
         // keepalive
         builder.AddChannelArgument(GRPC_ARG_KEEPALIVE_TIME_MS,
-                                   m_config.grpc_arg_keepalive_time_ms);
+                                   m_config.keepalive_time_ms);
         builder.AddChannelArgument(GRPC_ARG_KEEPALIVE_TIMEOUT_MS,
-                                   m_config.grpc_arg_keepalive_timeout_ms);
-        builder.AddChannelArgument(
-            GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS,
-            m_config.grpc_arg_keepalive_permit_without_calls);
-        builder.AddChannelArgument(
-            GRPC_ARG_HTTP2_MAX_PINGS_WITHOUT_DATA,
-            m_config.grpc_arg_http2_max_pings_without_data);
+                                   m_config.keepalive_timeout_ms);
+        builder.AddChannelArgument(GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS,
+                                   m_config.keepalive_permit_without_calls);
+        builder.AddChannelArgument(GRPC_ARG_HTTP2_MAX_PINGS_WITHOUT_DATA,
+                                   m_config.http2_max_pings_without_data);
         builder.AddChannelArgument(
             GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS,
-            m_config.grpc_arg_http2_min_sent_ping_interval_without_data_ms);
+            m_config.http2_min_sent_ping_interval_without_data_ms);
         builder.AddChannelArgument(
             GRPC_ARG_HTTP2_MIN_RECV_PING_INTERVAL_WITHOUT_DATA_MS,
-            m_config.grpc_arg_http2_min_recv_ping_interval_without_data_ms);
+            m_config.http2_min_recv_ping_interval_without_data_ms);
 
         if (m_config.min_pollers.has_value())
             builder.SetSyncServerOption(grpc::ServerBuilder::MIN_POLLERS,
@@ -654,17 +654,18 @@ int main() {
     peak::GrpcConfig config{
         .host = "0.0.0.0:5566",
         .thread_count = 1,
-        .grpc_arg_keepalive_time_ms = 10000,
-        .grpc_arg_keepalive_timeout_ms = 10000,
-        .grpc_arg_keepalive_permit_without_calls = 1,
-        .grpc_arg_http2_max_pings_without_data = 0,
-        .grpc_arg_http2_min_sent_ping_interval_without_data_ms = 10000,
-        .grpc_arg_http2_min_recv_ping_interval_without_data_ms = 5000,
+        .keepalive_time_ms = 10000,
+        .keepalive_timeout_ms = 10000,
+        .keepalive_permit_without_calls = 1,
+        .http2_max_pings_without_data = 0,
+        .http2_min_sent_ping_interval_without_data_ms = 10000,
+        .http2_min_recv_ping_interval_without_data_ms = 5000,
         .min_pollers = 2,
         .max_pollers = 4,
     };
     auto m_grpc_server = std::make_unique<peak::GrpcServer>(config);
     namespace asio = boost::asio;
+
     m_grpc_server->setExampleNoticeRpcCallback(
         [] (peak::ExampleNoticeRPC& rpc) -> asio::awaitable<void> {
             (void)rpc;
@@ -693,6 +694,48 @@ request) -> asio::awaitable<void> { (void)rpc; (void)request; co_return;
     m_grpc_server->start();
     std::this_thread::sleep_for(std::chrono::milliseconds(5000));
     m_grpc_server->stop();
+
     return 0;
 }
+
+//-----------------------------------------------------------
+
+asio::awaitable<void> notice(peak::ExampleNoticeRPC& rpc){
+    (void)rpc;
+    co_return;
+}
+m_grpc_server->setExampleNoticeRpcCallback(std::bind_front(&Test::notice,
+this));
+
+
+asio::awaitable<void> order(peak::ExampleOrderRPC& rpc,
+fantasy::v1::OrderRequest& request) { (void)rpc; co_return;
+}
+m_grpc_server->setExampleOrderRpcCallback(std::bind_front(&Test::order, this));
+
+
+
+asio::awaitable<void> getOrderSeqNo(peak::ExampleGetOrderSeqNoRPC& rpc,
+fantasy::v1::GetOrderSeqNoRequest& request) { (void)rpc; co_return;
+}
+m_grpc_server->setExampleGetOrderSeqNoRpcCallback(std::bind_front(&Test::getOrderSeqNo,
+this));
+
+
+
+asio::awaitable<void> serverStreaming(peak::ExampleServerStreamingRPC& rpc,
+fantasy::v1::OrderRequest& request) { (void)rpc; co_return;
+}
+m_grpc_server->setExampleServerStreamingRpcCallback(std::bind_front(&Test::serverStreaming,
+this));
+
+
+
+asio::awaitable<void> clientStreaming(peak::ExampleClientStreamingRPC& rpc){
+    (void)rpc;
+    co_return;
+}
+m_grpc_server->setExampleClientStreamingRpcCallback(std::bind_front(&Test::clientStreaming,
+this));
+
 */

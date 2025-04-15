@@ -149,6 +149,6 @@ function(target_add_protobuf target)
             $<BUILD_INTERFACE:${grpc_SOURCE_DIR}/include>
             $<BUILD_INTERFACE:${grpc_SOURCE_DIR}/third_party/abseil-cpp>
         )
-        target_link_libraries(${target} PUBLIC grpc_plugin_support gpr upb grpc grpc++)
+        target_link_libraries(${target} PUBLIC grpc_plugin_support gpr upb grpc grpc++ grpc++_reflection)
     endforeach()
 endfunction()
