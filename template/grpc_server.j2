@@ -163,6 +163,8 @@ public:
         builder.AddChannelArgument(GRPC_ARG_HTTP2_MAX_PINGS_WITHOUT_DATA, m_config.http2_max_pings_without_data);
         builder.AddChannelArgument(GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS, m_config.http2_min_sent_ping_interval_without_data_ms);
         builder.AddChannelArgument(GRPC_ARG_HTTP2_MIN_RECV_PING_INTERVAL_WITHOUT_DATA_MS, m_config.http2_min_recv_ping_interval_without_data_ms);
+        if (m_add_channel_argument)
+            m_add_channel_argument(builder);
 
         if (m_config.min_pollers.has_value())
             builder.SetSyncServerOption(grpc::ServerBuilder::MIN_POLLERS, m_config.min_pollers.value());
@@ -194,6 +196,10 @@ public:
 
     void setCreateSslServerCredentialsCallback(auto cb) {
         m_create_server_credentials = std::move(cb);
+    }
+
+    void setAddChannelArgumentCallback(auto cb) {
+        m_add_channel_argument = std::move(cb);
     }
 
     {% for service_name in grpc.interface -%}
@@ -311,6 +317,8 @@ private:
     }
 
     GrpcConfig m_config;
+    std::function<void(grpc::ServerBuilder&)> m_add_channel_argument;
+
     {% for service_name in grpc.interface -%}
     {% for interface in grpc.interface[service_name] -%}
     {% if interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' %}

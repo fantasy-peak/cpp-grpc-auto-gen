@@ -169,6 +169,8 @@ class GrpcServer final {
         builder.AddChannelArgument(
             GRPC_ARG_HTTP2_MIN_RECV_PING_INTERVAL_WITHOUT_DATA_MS,
             m_config.http2_min_recv_ping_interval_without_data_ms);
+        if (m_add_channel_argument)
+            m_add_channel_argument(builder);
 
         if (m_config.min_pollers.has_value())
             builder.SetSyncServerOption(grpc::ServerBuilder::MIN_POLLERS,
@@ -202,6 +204,10 @@ class GrpcServer final {
 
     void setCreateSslServerCredentialsCallback(auto cb) {
         m_create_server_credentials = std::move(cb);
+    }
+
+    void setAddChannelArgumentCallback(auto cb) {
+        m_add_channel_argument = std::move(cb);
     }
 
     void setExampleNoticeRpcCallback(auto cb) {
@@ -378,6 +384,7 @@ class GrpcServer final {
     }
 
     GrpcConfig m_config;
+    std::function<void(grpc::ServerBuilder&)> m_add_channel_argument;
 
     std::function<asio::awaitable<void>(ExampleNoticeRPC&)>
         m_example_notice_rpc_handler;
