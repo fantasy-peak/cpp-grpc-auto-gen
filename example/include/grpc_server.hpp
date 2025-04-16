@@ -417,11 +417,13 @@ struct GrpcConfig {
     int32_t http2_min_recv_ping_interval_without_data_ms{5000};
     std::optional<int32_t> min_pollers;
     std::optional<int32_t> max_pollers;
+    std::optional<bool> open_reflection_server;
 };
 
 template <auto RequestRPC>
 using AwaitableServerRPC =
     asio::use_awaitable_t<>::as_default_on_t<agrpc::ServerRPC<RequestRPC>>;
+
 using ExampleService = fantasy::v1::Example::AsyncService;
 using ExampleNoticeRPC = AwaitableServerRPC<&ExampleService::RequestNotice>;
 using ExampleOrderRPC = AwaitableServerRPC<&ExampleService::RequestOrder>;
@@ -442,6 +444,22 @@ using ConcurrentChannel =
     asio::experimental::concurrent_channel<void(asio::error_code,
                                                 std::shared_ptr<Message<T>>)>;
 #endif
+
+/*************************************************** */
+#if USE_GRPC_NOTIFY_WHEN_DONE
+struct ServerRPCNotifyWhenDoneTraits : agrpc::DefaultServerRPCTraits {
+    static constexpr bool NOTIFY_WHEN_DONE = true;
+};
+
+template <auto RequestRPC>
+using NotifyWhenDoneServerRPC =
+    agrpc::ServerRPC<RequestRPC, ServerRPCNotifyWhenDoneTraits>;
+
+using ExampleServerStreamingNotifyWhenDoneRPC =
+    NotifyWhenDoneServerRPC<&ExampleService::RequestServerStreaming>;
+
+#endif
+/*************************************************** */
 
 class GrpcServer final {
   public:
@@ -466,7 +484,10 @@ class GrpcServer final {
         if (m_create_server_credentials)
             creds = m_create_server_credentials();
         builder.AddListeningPort(m_config.host, creds);
-        grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+
+        if (m_config.open_reflection_server.has_value() &&
+            m_config.open_reflection_server.value())
+            grpc::reflection::InitProtoReflectionServerBuilderPlugin();
 
         m_example_service = std::make_unique<ExampleService>();
         builder.RegisterService(m_example_service.get());
@@ -542,9 +563,31 @@ class GrpcServer final {
     void setExampleClientStreamingRpcCallback(auto cb) {
         m_example_client_streaming_rpc_handler = std::move(cb);
     }
+#if USE_GRPC_NOTIFY_WHEN_DONE
+
+    void setExampleServerStreamingNotifyWhenDoneRpcCallback(auto cb) {
+        m_example_server_streaming_notify_when_done_rpc_handler = std::move(cb);
+    }
+
+#endif
 
   private:
     void checkCallback() {
+#if USE_GRPC_NOTIFY_WHEN_DONE
+        if (!m_example_notice_rpc_handler)
+            throw std::runtime_error("not call setExampleNoticeRpcCallback");
+        if (!m_example_order_rpc_handler)
+            throw std::runtime_error("not call setExampleOrderRpcCallback");
+        if (!m_example_get_order_seq_no_rpc_handler)
+            throw std::runtime_error(
+                "not call setExampleGetOrderSeqNoRpcCallback");
+        if (!m_example_server_streaming_notify_when_done_rpc_handler)
+            throw std::runtime_error(
+                "not call setExampleServerStreamingNotifyWhenDoneRpcCallback");
+        if (!m_example_client_streaming_rpc_handler)
+            throw std::runtime_error(
+                "not call setExampleClientStreamingRpcCallback");
+#else
         if (!m_example_notice_rpc_handler)
             throw std::runtime_error("not call setExampleNoticeRpcCallback");
         if (!m_example_order_rpc_handler)
@@ -558,9 +601,69 @@ class GrpcServer final {
         if (!m_example_client_streaming_rpc_handler)
             throw std::runtime_error(
                 "not call setExampleClientStreamingRpcCallback");
+#endif
     }
 
     void registerHandler(auto& grpc_context) {
+#if USE_GRPC_NOTIFY_WHEN_DONE
+        agrpc::register_awaitable_rpc_handler<ExampleNoticeRPC>(
+            grpc_context,
+            *m_example_service,
+            [this](ExampleNoticeRPC& rpc) -> asio::awaitable<void> {
+                co_await m_example_notice_rpc_handler(rpc);
+                co_return;
+            },
+            RethrowFirstArg{});
+
+        agrpc::register_awaitable_rpc_handler<ExampleOrderRPC>(
+            grpc_context,
+            *m_example_service,
+            [this](ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request)
+                -> asio::awaitable<void> {
+                co_await m_example_order_rpc_handler(rpc, request);
+                co_return;
+            },
+            RethrowFirstArg{});
+
+        agrpc::register_awaitable_rpc_handler<ExampleGetOrderSeqNoRPC>(
+            grpc_context,
+            *m_example_service,
+            [this](ExampleGetOrderSeqNoRPC& rpc,
+                   fantasy::v1::GetOrderSeqNoRequest& request)
+                -> asio::awaitable<void> {
+                co_await m_example_get_order_seq_no_rpc_handler(rpc, request);
+                co_return;
+            },
+            RethrowFirstArg{});
+
+        auto notify_when_done_request_handler_4 = [this](agrpc::GrpcContext&
+                                                             grpc_context) {
+            return [this, &grpc_context](
+                       ExampleServerStreamingNotifyWhenDoneRPC& rpc,
+                       ExampleServerStreamingNotifyWhenDoneRPC::Request&
+                           request) -> asio::awaitable<void> {
+                co_await m_example_server_streaming_notify_when_done_rpc_handler(
+                    rpc, request);
+                co_return;
+            };
+        };
+        agrpc::register_awaitable_rpc_handler<
+            ExampleServerStreamingNotifyWhenDoneRPC>(
+            grpc_context,
+            *m_example_service,
+            notify_when_done_request_handler_4(grpc_context),
+            RethrowFirstArg{});
+
+        agrpc::register_awaitable_rpc_handler<ExampleClientStreamingRPC>(
+            grpc_context,
+            *m_example_service,
+            [this](ExampleClientStreamingRPC& rpc) -> asio::awaitable<void> {
+                co_await m_example_client_streaming_rpc_handler(rpc);
+                co_return;
+            },
+            RethrowFirstArg{});
+#else
+
         agrpc::register_awaitable_rpc_handler<ExampleNoticeRPC>(
             grpc_context,
             *m_example_service,
@@ -610,6 +713,8 @@ class GrpcServer final {
                 co_return;
             },
             RethrowFirstArg{});
+
+#endif
     }
 
     GrpcConfig m_config;
@@ -628,6 +733,15 @@ class GrpcServer final {
 
     std::function<asio::awaitable<void>(ExampleClientStreamingRPC&)>
         m_example_client_streaming_rpc_handler;
+#if USE_GRPC_NOTIFY_WHEN_DONE
+
+    std::function<asio::awaitable<void>(
+        ExampleServerStreamingNotifyWhenDoneRPC&,
+        ExampleServerStreamingNotifyWhenDoneRPC::Request&)>
+        m_example_server_streaming_notify_when_done_rpc_handler;
+
+#endif
+
     std::function<std::shared_ptr<grpc::ServerCredentials>()>
         m_create_server_credentials;
     std::unique_ptr<ExampleService> m_example_service;

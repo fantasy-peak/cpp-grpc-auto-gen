@@ -13,6 +13,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include "boost/asio/as_tuple.hpp"
 #include "boost/asio/awaitable.hpp"
 #include "boost/container/container_fwd.hpp"
 
@@ -33,6 +34,8 @@
 #ifndef USE_BOOST_CIRCULAR_BUFFER
 #define USE_BOOST_CIRCULAR_BUFFER 1
 #endif
+
+#define USE_GRPC_NOTIFY_WHEN_DONE 1
 
 #include <grpc_server.hpp>
 
@@ -296,13 +299,13 @@ struct TestServer {
             [](const std::string& topic_name,
                const std::shared_ptr<peak::Message<std::string>>& ptr) mutable {
                 using namespace boost::interprocess;
-                scoped_lock<named_mutex> lock(mtx);
-                auto* myvector = segment.find_or_construct<MyVector>(
-                    "MyVector")(segment.get_segment_manager());
-                Data dd{{topic_name.data(), topic_name.size()},
-                        {ptr->info_ptr->data(), ptr->info_ptr->size()},
-                        ptr->seq_no};
-                myvector->push_back(dd);
+                // scoped_lock<named_mutex> lock(mtx);
+                // auto* myvector = segment.find_or_construct<MyVector>(
+                //     "MyVector")(segment.get_segment_manager());
+                // Data dd{{topic_name.data(), topic_name.size()},
+                //         {ptr->info_ptr->data(), ptr->info_ptr->size()},
+                //         ptr->seq_no};
+                // myvector->push_back(dd);
                 SPDLOG_INFO("seq_no: {}, {}", topic_name, ptr->seq_no);
             });
 
@@ -312,19 +315,19 @@ struct TestServer {
                 std::vector<std::shared_ptr<peak::Message<std::string>>>>
                 cache;
             using namespace boost::interprocess;
-            scoped_lock<named_mutex> lock(mtx);
-            MyVector* myvector = segment.find<MyVector>("MyVector").first;
-            if (myvector == nullptr)
-                return cache;
-            SPDLOG_INFO("recover myvector");
-            for (auto& ptr : *myvector) {
-                std::cout << "recover:" << ptr.seq_no << std::endl;
-                auto p = std::make_shared<peak::Message<std::string>>(
-                    std::make_shared<std::string>(ptr.data.begin(),
-                                                  ptr.data.end()),
-                    ptr.seq_no);
-                cache[ptr.topic_name].emplace_back(p);
-            }
+            // scoped_lock<named_mutex> lock(mtx);
+            // MyVector* myvector = segment.find<MyVector>("MyVector").first;
+            // if (myvector == nullptr)
+            //     return cache;
+            // SPDLOG_INFO("recover myvector");
+            // for (auto& ptr : *myvector) {
+            //     std::cout << "recover:" << ptr.seq_no << std::endl;
+            //     auto p = std::make_shared<peak::Message<std::string>>(
+            //         std::make_shared<std::string>(ptr.data.begin(),
+            //                                       ptr.data.end()),
+            //         ptr.seq_no);
+            //     cache[ptr.topic_name].emplace_back(p);
+            // }
             return cache;
         });
 
@@ -335,6 +338,51 @@ struct TestServer {
             std::bind_front(&TestServer::orderNoticeHandler, this));
         m_grpc_server->setExampleGetOrderSeqNoRpcCallback(
             std::bind_front(&TestServer::getOrderSeqNoRpcHandler, this));
+#if USE_GRPC_NOTIFY_WHEN_DONE
+        m_grpc_server->setExampleServerStreamingNotifyWhenDoneRpcCallback(
+            [](peak::ExampleServerStreamingNotifyWhenDoneRPC& rpc,
+               peak::ExampleServerStreamingNotifyWhenDoneRPC::Request& request)
+                -> boost::asio::awaitable<void> {
+                peak::ExampleServerStreamingNotifyWhenDoneRPC::Response
+                    response;
+                using namespace boost::asio::experimental::awaitable_operators;
+                using Channel = boost::asio::experimental::concurrent_channel<
+                    void(boost::system::error_code, std::string)>;
+
+                auto chan = std::make_shared<Channel>(rpc.get_executor(), 1000);
+                spdlog::info("NotifyWhenDoneRPC----------");
+                auto check = [](auto& rpc,
+                                auto chan) -> boost::asio::awaitable<void> {
+                    agrpc::Alarm alarm{rpc.get_executor()};
+                    while (true) {
+                        co_await alarm.wait(std::chrono::system_clock::now() +
+                                                std::chrono::seconds(2),
+                                            boost::asio::deferred);
+                        spdlog::info("NotifyWhenDoneRPC: {}",
+                                     rpc.context().IsCancelled());
+                        if (rpc.context().IsCancelled())
+                            break;
+                    }
+                    chan->close();
+                    co_return;
+                };
+                auto recv = [](auto& rpc,
+                               auto chan) -> boost::asio::awaitable<void> {
+                    for (;;) {
+                        auto [ec, str] = co_await chan->async_receive(
+                            boost::asio::as_tuple(boost::asio::use_awaitable));
+                        if (ec) {
+                            spdlog::info("{}", ec.message());
+                            break;
+                        }
+                    }
+                    co_return;
+                };
+                co_await (check(rpc, chan) && recv(rpc, chan));
+                spdlog::info("{}", "client disconnect");
+                co_return;
+            });
+#else
         m_grpc_server->setExampleServerStreamingRpcCallback(
             [](peak::ExampleServerStreamingRPC& rpc,
                fantasy::v1::OrderRequest& request)
@@ -362,6 +410,7 @@ struct TestServer {
                 co_await rpc.finish(grpc::Status::OK);
                 co_return;
             });
+#endif
         m_grpc_server->setExampleClientStreamingRpcCallback(
             [](peak::ExampleClientStreamingRPC&)
                 -> boost::asio::awaitable<void> { co_return; });

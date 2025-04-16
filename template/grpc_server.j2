@@ -55,8 +55,6 @@
 #include <agrpc/asio_grpc.hpp>
 #include <agrpc/health_check_service.hpp>
 
-
-
 namespace {{grpc.namespace}} {
 
 #ifdef AGRPC_BOOST_ASIO
@@ -391,10 +389,12 @@ struct GrpcConfig {
     int32_t http2_min_recv_ping_interval_without_data_ms{5000};
     std::optional<int32_t> min_pollers;
     std::optional<int32_t> max_pollers;
+    std::optional<bool> open_reflection_server;
 };
 
 template <auto RequestRPC>
 using AwaitableServerRPC = asio::use_awaitable_t<>::as_default_on_t<agrpc::ServerRPC<RequestRPC>>;
+
 {% for service_name in grpc.interface -%}
 using {{service_name}}Service = {{grpc.package}}::{{service_name}}::AsyncService;
 {% for interface in grpc.interface[service_name] -%}
@@ -409,6 +409,29 @@ using ConcurrentChannel = asio::experimental::concurrent_channel<void(boost::sys
 template <typename T>
 using ConcurrentChannel = asio::experimental::concurrent_channel<void(asio::error_code, std::shared_ptr<Message<T>>)>;
 #endif
+
+/*************************************************** */
+#if USE_GRPC_NOTIFY_WHEN_DONE
+struct ServerRPCNotifyWhenDoneTraits : agrpc::DefaultServerRPCTraits {
+    static constexpr bool NOTIFY_WHEN_DONE = true;
+};
+
+template <auto RequestRPC>
+using NotifyWhenDoneServerRPC =
+    agrpc::ServerRPC<RequestRPC, ServerRPCNotifyWhenDoneTraits>;
+
+
+{% for service_name in grpc.interface %}
+{% for interface in grpc.interface[service_name] %}
+{% if interface.type=='server-streaming-rpc' %}
+using {{service_name}}{{interface.name}}NotifyWhenDoneRPC = NotifyWhenDoneServerRPC<&{{service_name}}Service::Request{{interface.name}}>;
+{% else -%}
+
+{% endif -%}
+{% endfor %}
+{% endfor %}
+#endif
+/*************************************************** */
 
 class {{grpc.class_name}} final {
 public:
@@ -432,7 +455,9 @@ public:
         if (m_create_server_credentials)
             creds = m_create_server_credentials();
         builder.AddListeningPort(m_config.host, creds);
-        grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+
+        if (m_config.open_reflection_server.has_value() && m_config.open_reflection_server.value())
+            grpc::reflection::InitProtoReflectionServerBuilderPlugin();
 
         {% for service_name in grpc.interface -%}
         m_{{service_name|to_snake}}_service = std::make_unique<{{service_name}}Service>();
@@ -480,6 +505,7 @@ public:
     void setCreateSslServerCredentialsCallback(auto cb) {
         m_create_server_credentials = std::move(cb);
     }
+
     {% for service_name in grpc.interface -%}
     {% for interface in grpc.interface[service_name] -%}
     void set{{service_name}}{{interface.name}}RpcCallback(auto cb) {
@@ -488,18 +514,87 @@ public:
     {% endfor -%}
     {% endfor -%}
 
+#if USE_GRPC_NOTIFY_WHEN_DONE
+    {% for service_name in grpc.interface %}
+    {% for interface in grpc.interface[service_name] %}
+    {% if interface.type=='server-streaming-rpc' %}
+    void set{{service_name}}{{interface.name}}NotifyWhenDoneRpcCallback(auto cb) {
+        m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler = std::move(cb);
+    }
+    {% else -%}
+    {% endif -%}
+    {% endfor -%}
+    {% endfor -%}
+#endif
+
 private:
     void checkCallback() {
+#if USE_GRPC_NOTIFY_WHEN_DONE
+        {%- for service_name in grpc.interface -%}
+        {% for interface in grpc.interface[service_name] %}
+        {% if interface.type=='server-streaming-rpc' -%}
+            if (!m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler)
+                throw std::runtime_error("not call set{{service_name}}{{interface.name}}NotifyWhenDoneRpcCallback");
+        {%- else -%}
+            if (!m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler)
+                throw std::runtime_error("not call set{{service_name}}{{interface.name}}RpcCallback");
+        {%- endif -%}
+        {% endfor %}
+        {% endfor -%}
+#else
         {% for service_name in grpc.interface -%}
         {% for interface in grpc.interface[service_name] -%}
             if (!m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler)
                 throw std::runtime_error("not call set{{service_name}}{{interface.name}}RpcCallback");
         {% endfor -%}
         {% endfor -%}
+#endif
     }
 
     void registerHandler(auto& grpc_context) {
-        {% for service_name in grpc.interface %}
+#if USE_GRPC_NOTIFY_WHEN_DONE
+        {%- for service_name in grpc.interface -%}
+        {%- for interface in grpc.interface[service_name] -%}
+        {% if interface.type=='server-streaming-rpc' %}
+
+        auto notify_when_done_request_handler_{{ loop.index }} =
+            [this](agrpc::GrpcContext& grpc_context) {
+                return [this, &grpc_context]({{service_name}}{{interface.name}}NotifyWhenDoneRPC& rpc,
+                    {{service_name}}{{interface.name}}NotifyWhenDoneRPC::Request& request) -> asio::awaitable<void> {
+                    co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler(rpc, request);
+                    co_return;
+                };
+            };
+        agrpc::register_awaitable_rpc_handler<
+            ExampleServerStreamingNotifyWhenDoneRPC>(
+            grpc_context,
+            *m_example_service,
+            notify_when_done_request_handler_{{ loop.index }}(grpc_context),
+            RethrowFirstArg{});
+        
+        {% elif interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' %}
+        agrpc::register_awaitable_rpc_handler<{{service_name}}{{interface.name}}RPC>(
+            grpc_context,
+            *m_{{service_name|to_snake}}_service,
+            [this]({{service_name}}{{interface.name}}RPC& rpc) -> asio::awaitable<void> {
+                co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc);
+                co_return;
+            },
+            RethrowFirstArg{});
+        {% else %}
+        agrpc::register_awaitable_rpc_handler<{{service_name}}{{interface.name}}RPC>(
+            grpc_context,
+            *m_{{service_name|to_snake}}_service,
+            [this]({{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) -> asio::awaitable<void> {
+                co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc, request);
+                co_return;
+            },
+            RethrowFirstArg{});
+        {% endif -%}
+        {%- endfor -%}
+        {%- endfor -%}
+#else
+        {%- for service_name in grpc.interface -%}
         {% for interface in grpc.interface[service_name] %}
         {% if interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' %}
         agrpc::register_awaitable_rpc_handler<{{service_name}}{{interface.name}}RPC>(
@@ -522,6 +617,7 @@ private:
         {% endif -%}
         {% endfor %}
         {% endfor %}
+#endif
     }
 
     GrpcConfig m_config;
@@ -534,6 +630,20 @@ private:
     {% endif -%}
     {% endfor -%}
     {% endfor -%}
+
+#if USE_GRPC_NOTIFY_WHEN_DONE
+    {% for service_name in grpc.interface %}
+    {% for interface in grpc.interface[service_name] %}
+    {% if interface.type=='server-streaming-rpc' %}
+    std::function<
+        asio::awaitable<void>({{service_name}}{{interface.name}}NotifyWhenDoneRPC&, 
+        {{service_name}}{{interface.name}}NotifyWhenDoneRPC::Request&)> m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler;
+    {% else %}
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+#endif
+
     std::function<std::shared_ptr<grpc::ServerCredentials>()> m_create_server_credentials;
     {% for service_name in grpc.interface -%}
     std::unique_ptr<{{service_name}}Service> m_{{service_name|to_snake}}_service;
