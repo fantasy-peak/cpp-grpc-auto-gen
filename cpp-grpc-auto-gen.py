@@ -3,6 +3,7 @@ import yaml
 import json
 from jinja2 import *
 import argparse
+import subprocess
 
 def get_filename(path):
     return path.split('/')[-1]
@@ -34,3 +35,32 @@ if __name__ == "__main__":
     with open(config['out_file'], 'w') as file:
         file.write(htmlout)
     os.system('{} -i {}'.format(args.format, config['out_file']))
+
+    # create example
+    dir_path = "example_project"
+    os.makedirs(dir_path, exist_ok=True)
+
+    dir_path = "example_project/proto"
+    os.makedirs(dir_path, exist_ok=True)
+
+    dir_path = "example_project/src"
+    os.makedirs(dir_path, exist_ok=True)
+
+    dir_path = "example_project/include"
+    os.makedirs(dir_path, exist_ok=True)
+    subprocess.run(["cp", config['out_file'], dir_path], check=True)
+
+    dir_path = "example_project"
+
+    template = jenv.get_template("./template/xmake.j2")
+    htmlout = template.render(grpc=config)
+
+    with open(dir_path + '/' + 'xmake.lua', 'w') as file:
+        file.write(htmlout)
+
+    template = jenv.get_template("./template/main.cpp.j2")
+    htmlout = template.render(grpc=config)
+
+    with open(dir_path + '/src/' + 'main.cpp', 'w') as file:
+        file.write(htmlout)
+    
