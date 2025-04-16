@@ -210,6 +210,10 @@ class GrpcServer final {
         m_add_channel_argument = std::move(cb);
     }
 
+    void setLogCallback(auto cb) {
+        m_log = std::move(cb);
+    }
+
     void setExampleNoticeRpcCallback(auto cb) {
         m_example_notice_rpc_handler = std::move(cb);
     }
@@ -276,7 +280,11 @@ class GrpcServer final {
             grpc_context,
             *m_example_service,
             [this](ExampleNoticeRPC& rpc) -> asio::awaitable<void> {
-                co_await m_example_notice_rpc_handler(rpc);
+                try {
+                    co_await m_example_notice_rpc_handler(rpc);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -286,7 +294,11 @@ class GrpcServer final {
             *m_example_service,
             [this](ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request)
                 -> asio::awaitable<void> {
-                co_await m_example_order_rpc_handler(rpc, request);
+                try {
+                    co_await m_example_order_rpc_handler(rpc, request);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -297,7 +309,12 @@ class GrpcServer final {
             [this](ExampleGetOrderSeqNoRPC& rpc,
                    fantasy::v1::GetOrderSeqNoRequest& request)
                 -> asio::awaitable<void> {
-                co_await m_example_get_order_seq_no_rpc_handler(rpc, request);
+                try {
+                    co_await m_example_get_order_seq_no_rpc_handler(rpc,
+                                                                    request);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -308,8 +325,12 @@ class GrpcServer final {
                        ExampleServerStreamingNotifyWhenDoneRPC& rpc,
                        ExampleServerStreamingNotifyWhenDoneRPC::Request&
                            request) -> asio::awaitable<void> {
-                co_await m_example_server_streaming_notify_when_done_rpc_handler(
-                    rpc, request);
+                try {
+                    co_await m_example_server_streaming_notify_when_done_rpc_handler(
+                        rpc, request);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             };
         };
@@ -324,7 +345,11 @@ class GrpcServer final {
             grpc_context,
             *m_example_service,
             [this](ExampleClientStreamingRPC& rpc) -> asio::awaitable<void> {
-                co_await m_example_client_streaming_rpc_handler(rpc);
+                try {
+                    co_await m_example_client_streaming_rpc_handler(rpc);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -334,7 +359,11 @@ class GrpcServer final {
             grpc_context,
             *m_example_service,
             [this](ExampleNoticeRPC& rpc) -> asio::awaitable<void> {
-                co_await m_example_notice_rpc_handler(rpc);
+                try {
+                    co_await m_example_notice_rpc_handler(rpc);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -344,7 +373,11 @@ class GrpcServer final {
             *m_example_service,
             [this](ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request)
                 -> asio::awaitable<void> {
-                co_await m_example_order_rpc_handler(rpc, request);
+                try {
+                    co_await m_example_order_rpc_handler(rpc, request);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -355,7 +388,12 @@ class GrpcServer final {
             [this](ExampleGetOrderSeqNoRPC& rpc,
                    fantasy::v1::GetOrderSeqNoRequest& request)
                 -> asio::awaitable<void> {
-                co_await m_example_get_order_seq_no_rpc_handler(rpc, request);
+                try {
+                    co_await m_example_get_order_seq_no_rpc_handler(rpc,
+                                                                    request);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -366,7 +404,12 @@ class GrpcServer final {
             [this](ExampleServerStreamingRPC& rpc,
                    fantasy::v1::OrderRequest& request)
                 -> asio::awaitable<void> {
-                co_await m_example_server_streaming_rpc_handler(rpc, request);
+                try {
+                    co_await m_example_server_streaming_rpc_handler(rpc,
+                                                                    request);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -375,7 +418,11 @@ class GrpcServer final {
             grpc_context,
             *m_example_service,
             [this](ExampleClientStreamingRPC& rpc) -> asio::awaitable<void> {
-                co_await m_example_client_streaming_rpc_handler(rpc);
+                try {
+                    co_await m_example_client_streaming_rpc_handler(rpc);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -384,6 +431,7 @@ class GrpcServer final {
     }
 
     GrpcConfig m_config;
+    std::function<void(int, std::string)> m_log = [](auto, auto) {};
     std::function<void(grpc::ServerBuilder&)> m_add_channel_argument;
 
     std::function<asio::awaitable<void>(ExampleNoticeRPC&)>

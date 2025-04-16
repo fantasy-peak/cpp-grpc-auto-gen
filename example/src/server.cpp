@@ -16,6 +16,7 @@
 #include "boost/asio/as_tuple.hpp"
 #include "boost/asio/awaitable.hpp"
 #include "boost/container/container_fwd.hpp"
+#include "boost/system/detail/error_code.hpp"
 
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/vector.hpp>
@@ -335,6 +336,10 @@ struct TestServer {
         });
 
         m_grpc_server = std::make_unique<peak::GrpcServer>(m_config);
+        m_grpc_server->setLogCallback([](int line, std::string) {
+            std::cout << "line:" << line << std::endl;
+            exit(1);
+        });
         m_grpc_server->setExampleOrderRpcCallback(
             std::bind_front(&TestServer::orderRpcHandler, this));
         m_grpc_server->setExampleNoticeRpcCallback(
@@ -348,11 +353,13 @@ struct TestServer {
                 -> boost::asio::awaitable<void> {
                 peak::ExampleServerStreamingNotifyWhenDoneRPC::Response
                     response;
+
                 using namespace boost::asio::experimental::awaitable_operators;
                 using Channel = boost::asio::experimental::concurrent_channel<
                     void(boost::system::error_code, std::string)>;
 
                 auto chan = std::make_shared<Channel>(rpc.get_executor(), 1000);
+                /*
                 spdlog::info("NotifyWhenDoneRPC----------");
                 auto check = [](auto& rpc,
                                 auto chan) -> boost::asio::awaitable<void> {
@@ -382,6 +389,44 @@ struct TestServer {
                     co_return;
                 };
                 co_await (check(rpc, chan) && recv(rpc, chan));
+                */
+                std::weak_ptr<Channel> ch = chan;
+                std::thread([=] {
+                    for (int i = 0; i < 10; i++) {
+                        if (auto sp = ch.lock()) {
+                            sp->try_send(boost::system::error_code{},
+                                         "hello" + std::to_string(i));
+                        } else {
+                            return;
+                        }
+                        sleep(1);
+                    }
+                    chan->close();
+                }).detach();
+
+                while (true) {
+                    auto [completion_order, channel_ok, str, ec] =
+                        co_await boost::asio::experimental::make_parallel_group(
+                            chan->async_receive(boost::asio::deferred),
+                            rpc.wait_for_done(boost::asio::deferred))
+                            .async_wait(
+                                boost::asio::experimental::wait_for_one(),
+                                boost::asio::use_awaitable);
+                    if (completion_order[0] == 0) {
+                        // channel completed, send the next message to the
+                        // client:
+                        if (channel_ok)
+                            break;
+                        spdlog::info("recv:{} {}", str, channel_ok.message());
+                    } else {
+                        // wait_for_done completed, IsCancelled can now be
+                        // called:
+                        spdlog::info("NotifyWhenDoneRPC: {}",
+                                     rpc.context().IsCancelled());
+                        co_return;
+                    }
+                }
+
                 spdlog::info("{}", "client disconnect");
                 co_return;
             });

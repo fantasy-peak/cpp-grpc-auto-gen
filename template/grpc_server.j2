@@ -202,6 +202,10 @@ public:
         m_add_channel_argument = std::move(cb);
     }
 
+    void setLogCallback(auto cb) {
+        m_log = std::move(cb);
+    }
+
     {% for service_name in grpc.interface -%}
     {% for interface in grpc.interface[service_name] -%}
     void set{{service_name}}{{interface.name}}RpcCallback(auto cb) {
@@ -257,7 +261,11 @@ private:
             [this](agrpc::GrpcContext& grpc_context) {
                 return [this, &grpc_context]({{service_name}}{{interface.name}}NotifyWhenDoneRPC& rpc,
                     {{service_name}}{{interface.name}}NotifyWhenDoneRPC::Request& request) -> asio::awaitable<void> {
-                    co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler(rpc, request);
+                    try {
+                        co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler(rpc, request);
+                    } catch (const std::exception& e) {
+                        m_log(__LINE__, e.what());
+                    }
                     co_return;
                 };
             };
@@ -273,7 +281,11 @@ private:
             grpc_context,
             *m_{{service_name|to_snake}}_service,
             [this]({{service_name}}{{interface.name}}RPC& rpc) -> asio::awaitable<void> {
-                co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc);
+                try {
+                    co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -282,7 +294,11 @@ private:
             grpc_context,
             *m_{{service_name|to_snake}}_service,
             [this]({{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) -> asio::awaitable<void> {
-                co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc, request);
+                try {
+                    co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc, request);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -297,7 +313,11 @@ private:
             grpc_context,
             *m_{{service_name|to_snake}}_service,
             [this]({{service_name}}{{interface.name}}RPC& rpc) -> asio::awaitable<void> {
-                co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc);
+                try {
+                    co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -306,7 +326,11 @@ private:
             grpc_context,
             *m_{{service_name|to_snake}}_service,
             [this]({{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) -> asio::awaitable<void> {
-                co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc, request);
+                try {
+                    co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc, request);
+                } catch (const std::exception& e) {
+                    m_log(__LINE__, e.what());
+                }
                 co_return;
             },
             RethrowFirstArg{});
@@ -317,6 +341,7 @@ private:
     }
 
     GrpcConfig m_config;
+    std::function<void(int, std::string)> m_log = [](auto, auto) {};
     std::function<void(grpc::ServerBuilder&)> m_add_channel_argument;
 
     {% for service_name in grpc.interface -%}
