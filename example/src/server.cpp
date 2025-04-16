@@ -38,6 +38,7 @@
 #define USE_GRPC_NOTIFY_WHEN_DONE 1
 
 #include <grpc_server.hpp>
+#include <pubsub_service.hpp>
 
 struct Data {
     boost::container::string topic_name;
@@ -122,8 +123,11 @@ struct TestServer {
         agrpc::Waiter<void(bool)> waiter;
         waiter.initiate(agrpc::read, rpc, request);
 
-        auto chan = std::make_shared<peak::ConcurrentChannel<std::string>>(
-            rpc.get_executor(), m_channel_size);
+        using DATA = std::shared_ptr<Message<std::string>>;
+        auto chan =
+            std::make_shared<peak::ConcurrentChannel<DATA>>(rpc.get_executor(),
+                                                            m_channel_size);
+
         auto stop_chan = std::make_shared<StopChannel>(rpc.get_executor(), 1);
 
         {
@@ -138,7 +142,7 @@ struct TestServer {
 
         auto next_deadline =
             std::chrono::system_clock::now() + std::chrono::seconds(2);
-        std::unique_ptr<peak::Topic<std::string>::ScopedConn> scoped_conn_ptr;
+        std::unique_ptr<Topic<std::string>::ScopedConn> scoped_conn_ptr;
         while (true) {
             auto [completion_order,
                   read_error_code,
@@ -170,8 +174,7 @@ struct TestServer {
                         call_id,
                         "001",
                         no,
-                        [=](const std::shared_ptr<peak::Message<std::string>>&
-                                ptr) {
+                        [=](const std::shared_ptr<Message<std::string>>& ptr) {
                             auto ret =
                                 chan->try_send(boost::system::error_code{},
                                                ptr);
@@ -293,11 +296,11 @@ struct TestServer {
             "your_globally_unique_mutex_name");
 
         m_pub_sub_service =
-            std::make_shared<peak::PubSubService<std::string>>(100000);
+            std::make_shared<PubSubService<std::string>>(100000);
 
         m_pub_sub_service->setNoticeCallback(
             [](const std::string& topic_name,
-               const std::shared_ptr<peak::Message<std::string>>& ptr) mutable {
+               const std::shared_ptr<Message<std::string>>& ptr) mutable {
                 using namespace boost::interprocess;
                 // scoped_lock<named_mutex> lock(mtx);
                 // auto* myvector = segment.find_or_construct<MyVector>(
@@ -312,7 +315,7 @@ struct TestServer {
         m_pub_sub_service->recover([]() mutable {
             std::unordered_map<
                 std::string,
-                std::vector<std::shared_ptr<peak::Message<std::string>>>>
+                std::vector<std::shared_ptr<Message<std::string>>>>
                 cache;
             using namespace boost::interprocess;
             // scoped_lock<named_mutex> lock(mtx);
@@ -322,7 +325,7 @@ struct TestServer {
             // SPDLOG_INFO("recover myvector");
             // for (auto& ptr : *myvector) {
             //     std::cout << "recover:" << ptr.seq_no << std::endl;
-            //     auto p = std::make_shared<peak::Message<std::string>>(
+            //     auto p = std::make_shared<Message<std::string>>(
             //         std::make_shared<std::string>(ptr.data.begin(),
             //                                       ptr.data.end()),
             //         ptr.seq_no);
@@ -416,7 +419,7 @@ struct TestServer {
                 -> boost::asio::awaitable<void> { co_return; });
         m_grpc_server->start();
 
-        std::weak_ptr<peak::PubSubService<std::string>> pub_sub_service =
+        std::weak_ptr<PubSubService<std::string>> pub_sub_service =
             m_pub_sub_service;
         std::thread([=] {
             uint32_t count = 0;
@@ -465,7 +468,7 @@ struct TestServer {
     }
 
     std::shared_ptr<peak::GrpcServer> m_grpc_server;
-    std::shared_ptr<peak::PubSubService<std::string>> m_pub_sub_service;
+    std::shared_ptr<PubSubService<std::string>> m_pub_sub_service;
     peak::GrpcConfig m_config;
     bool m_stop{false};
     int32_t m_channel_size{1000000};
