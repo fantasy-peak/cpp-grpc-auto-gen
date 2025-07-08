@@ -270,9 +270,9 @@ private:
                 };
             };
         agrpc::register_awaitable_rpc_handler<
-            ExampleServerStreamingNotifyWhenDoneRPC>(
+            {{service_name}}{{interface.name}}NotifyWhenDoneRPC>(
             grpc_context,
-            *m_example_service,
+            *m_{{service_name|to_snake}}_service,
             notify_when_done_request_handler_{{ loop.index }}(grpc_context),
             RethrowFirstArg{});
         
