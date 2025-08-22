@@ -44,8 +44,9 @@
 
 #include <grpcpp/server.h>
 #include <grpcpp/server_builder.h>
+#ifdef OPEN_GRPC_REFLECTION_PLUGIN
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
-
+#endif
 #include <agrpc/asio_grpc.hpp>
 #include <agrpc/health_check_service.hpp>
 
@@ -79,7 +80,6 @@ struct GrpcConfig {
     int32_t http2_min_recv_ping_interval_without_data_ms{5000};
     std::optional<int32_t> min_pollers;
     std::optional<int32_t> max_pollers;
-    std::optional<bool> open_reflection;
 };
 
 template <auto RequestRPC>
@@ -145,10 +145,9 @@ class GrpcServer final {
             creds = m_create_server_credentials();
         builder.AddListeningPort(m_config.host, creds);
 
-        if (m_config.open_reflection.has_value() &&
-            m_config.open_reflection.value())
-            grpc::reflection::InitProtoReflectionServerBuilderPlugin();
-
+#ifdef OPEN_GRPC_REFLECTION_PLUGIN
+        grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+#endif
         m_example_service = std::make_unique<ExampleService>();
         builder.RegisterService(m_example_service.get());
 
