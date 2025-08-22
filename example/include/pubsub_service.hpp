@@ -172,18 +172,22 @@ class Topic final : public std::enable_shared_from_this<Topic<T>> {
             std::make_unique<ScopedConn>(this->shared_from_this(), m_call_id);
         m_sig.emplace(m_call_id++, std::move(cb));
         std::vector<std::shared_ptr<Message<T>>> msg_vec;
-        auto it = std::ranges::find_if(m_buffer, [&](auto& ptr) {
-            return seq_no == ptr->seq_no;
-        });
-        if (it == m_buffer.end()) {
-            auto& front = m_buffer.front();
-            if (seq_no < front->seq_no) {
-                it = m_buffer.begin();
-            } else {
-                return std::make_tuple(std::move(msg_vec),
-                                       std::move(scoped_connection_ptr));
-            }
+        if (m_buffer.empty()) {
+            return std::make_tuple(std::move(msg_vec),
+                                   std::move(scoped_connection_ptr));
         }
+
+        auto it = std::lower_bound(m_buffer.begin(),
+                                   m_buffer.end(),
+                                   seq_no,
+                                   [](const auto& ptr, uint64_t value) {
+                                       return ptr->seq_no < value;
+                                   });
+        if (it == m_buffer.end()) {
+            return std::make_tuple(std::move(msg_vec),
+                                   std::move(scoped_connection_ptr));
+        }
+
         msg_vec.reserve(std::distance(it, m_buffer.end()));
         std::for_each(it, m_buffer.end(), [&](auto& ptr) {
             msg_vec.emplace_back(ptr);
