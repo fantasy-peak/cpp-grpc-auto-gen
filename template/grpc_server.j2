@@ -57,6 +57,19 @@ namespace {{grpc.namespace}} {
 namespace asio = boost::asio;
 #endif
 
+enum class LogLevel : uint8_t {
+    Info,
+    Error,
+};
+
+consteval std::string_view extractFilename(const char* path) {
+    std::string_view path_view{path};
+    std::size_t last_slash = path_view.find_last_of("/\\");
+    return (last_slash == std::string_view::npos)
+               ? path_view
+               : path_view.substr(last_slash + 1);
+}
+
 struct RethrowFirstArg {
     template <class... T>
     void operator()(std::exception_ptr ep, T&&...) {
@@ -135,6 +148,10 @@ public:
     {{grpc.class_name}}({{grpc.class_name}}&&) = delete;
     {{grpc.class_name}}& operator=({{grpc.class_name}}&&) = delete;
 
+    static auto create(GrpcConfig config) {
+        return std::make_unique<{{grpc.class_name}}>(std::move(config));
+    }
+
     void start() {
         checkCallback();
         grpc::ServerBuilder builder;
@@ -145,8 +162,8 @@ public:
         if (m_create_server_credentials)
             creds = m_create_server_credentials();
         builder.AddListeningPort(m_config.host, creds);
-
 #ifdef OPEN_GRPC_REFLECTION_PLUGIN
+        m_log(LogLevel::Info, extractFilename(__FILE__), __LINE__, "call InitProtoReflectionServerBuilderPlugin");
         grpc::reflection::InitProtoReflectionServerBuilderPlugin();
 #endif
         {% for service_name in grpc.interface -%}
@@ -264,7 +281,7 @@ private:
                     try {
                         co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler(rpc, request);
                     } catch (const std::exception& e) {
-                        m_log(__LINE__, e.what());
+                        m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                     }
                     co_return;
                 };
@@ -284,7 +301,7 @@ private:
                 try {
                     co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 }
                 co_return;
             },
@@ -297,7 +314,7 @@ private:
                 try {
                     co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 }
                 co_return;
             },
@@ -316,7 +333,7 @@ private:
                 try {
                     co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 }
                 co_return;
             },
@@ -329,7 +346,7 @@ private:
                 try {
                     co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 }
                 co_return;
             },
@@ -341,7 +358,7 @@ private:
     }
 
     GrpcConfig m_config;
-    std::function<void(int, std::string)> m_log = [](auto, auto) {};
+    std::function<void(LogLevel, std::string_view, int, std::string)> m_log = [](auto, auto, auto, auto) {};
     std::function<void(grpc::ServerBuilder&)> m_add_channel_argument;
 
     {% for service_name in grpc.interface -%}
@@ -402,8 +419,8 @@ int main() {
         .http2_min_recv_ping_interval_without_data_ms = 5000,
         .min_pollers = 2,
         .max_pollers = 4,
-        .open_reflection = true,
     };
+    // auto m_grpc_server = {{grpc.namespace}}::{{grpc.class_name}}::create(m_config);
     auto m_grpc_server = std::make_unique<{{grpc.namespace}}::{{grpc.class_name}}>(config);
     namespace asio = boost::asio;
 

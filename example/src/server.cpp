@@ -335,10 +335,12 @@ struct TestServer {
             return cache;
         });
 
-        m_grpc_server = std::make_unique<peak::GrpcServer>(m_config);
-        m_grpc_server->setLogCallback([](int line, std::string) {
-            std::cout << "line:" << line << std::endl;
-            exit(1);
+        m_grpc_server = peak::GrpcServer::create(m_config);
+        m_grpc_server->setLogCallback([](peak::LogLevel level,
+                                         std::string_view file,
+                                         int line,
+                                         std::string msg) {
+            std::cout << file << ":" << line << " " << msg << std::endl;
         });
         m_grpc_server->setExampleOrderRpcCallback(
             std::bind_front(&TestServer::orderRpcHandler, this));

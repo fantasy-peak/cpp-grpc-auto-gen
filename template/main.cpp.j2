@@ -12,7 +12,6 @@ int main() {
         .http2_min_recv_ping_interval_without_data_ms = 5000,
         .min_pollers = 2,
         .max_pollers = 4,
-        .open_reflection = true,
     };
     auto m_grpc_server = std::make_unique<{{grpc.namespace}}::{{grpc.class_name}}>(config);
     namespace asio = boost::asio;

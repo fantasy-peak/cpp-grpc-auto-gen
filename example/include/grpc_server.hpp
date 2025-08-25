@@ -56,6 +56,19 @@ namespace peak {
 namespace asio = boost::asio;
 #endif
 
+enum class LogLevel : uint8_t {
+    Info,
+    Error,
+};
+
+consteval std::string_view extractFilename(const char* path) {
+    std::string_view path_view{path};
+    std::size_t last_slash = path_view.find_last_of("/\\");
+    return (last_slash == std::string_view::npos)
+               ? path_view
+               : path_view.substr(last_slash + 1);
+}
+
 struct RethrowFirstArg {
     template <class... T>
     void operator()(std::exception_ptr ep, T&&...) {
@@ -133,6 +146,10 @@ class GrpcServer final {
     GrpcServer(GrpcServer&&) = delete;
     GrpcServer& operator=(GrpcServer&&) = delete;
 
+    static auto create(GrpcConfig config) {
+        return std::make_unique<GrpcServer>(std::move(config));
+    }
+
     void start() {
         checkCallback();
         grpc::ServerBuilder builder;
@@ -144,8 +161,11 @@ class GrpcServer final {
         if (m_create_server_credentials)
             creds = m_create_server_credentials();
         builder.AddListeningPort(m_config.host, creds);
-
 #ifdef OPEN_GRPC_REFLECTION_PLUGIN
+        m_log(LogLevel::Info,
+              extractFilename(__FILE__),
+              __LINE__,
+              "call InitProtoReflectionServerBuilderPlugin");
         grpc::reflection::InitProtoReflectionServerBuilderPlugin();
 #endif
         m_example_service = std::make_unique<ExampleService>();
@@ -282,7 +302,10 @@ class GrpcServer final {
                 try {
                     co_await m_example_notice_rpc_handler(rpc);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          e.what());
                 }
                 co_return;
             },
@@ -296,7 +319,10 @@ class GrpcServer final {
                 try {
                     co_await m_example_order_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          e.what());
                 }
                 co_return;
             },
@@ -312,7 +338,10 @@ class GrpcServer final {
                     co_await m_example_get_order_seq_no_rpc_handler(rpc,
                                                                     request);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          e.what());
                 }
                 co_return;
             },
@@ -328,7 +357,10 @@ class GrpcServer final {
                     co_await m_example_server_streaming_notify_when_done_rpc_handler(
                         rpc, request);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          e.what());
                 }
                 co_return;
             };
@@ -347,7 +379,10 @@ class GrpcServer final {
                 try {
                     co_await m_example_client_streaming_rpc_handler(rpc);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          e.what());
                 }
                 co_return;
             },
@@ -361,7 +396,10 @@ class GrpcServer final {
                 try {
                     co_await m_example_notice_rpc_handler(rpc);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          e.what());
                 }
                 co_return;
             },
@@ -375,7 +413,10 @@ class GrpcServer final {
                 try {
                     co_await m_example_order_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          e.what());
                 }
                 co_return;
             },
@@ -391,7 +432,10 @@ class GrpcServer final {
                     co_await m_example_get_order_seq_no_rpc_handler(rpc,
                                                                     request);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          e.what());
                 }
                 co_return;
             },
@@ -407,7 +451,10 @@ class GrpcServer final {
                     co_await m_example_server_streaming_rpc_handler(rpc,
                                                                     request);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          e.what());
                 }
                 co_return;
             },
@@ -420,7 +467,10 @@ class GrpcServer final {
                 try {
                     co_await m_example_client_streaming_rpc_handler(rpc);
                 } catch (const std::exception& e) {
-                    m_log(__LINE__, e.what());
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          e.what());
                 }
                 co_return;
             },
@@ -430,7 +480,8 @@ class GrpcServer final {
     }
 
     GrpcConfig m_config;
-    std::function<void(int, std::string)> m_log = [](auto, auto) {};
+    std::function<void(LogLevel, std::string_view, int, std::string)> m_log =
+        [](auto, auto, auto, auto) {};
     std::function<void(grpc::ServerBuilder&)> m_add_channel_argument;
 
     std::function<asio::awaitable<void>(ExampleNoticeRPC&)>
@@ -490,8 +541,8 @@ int main() {
         .http2_min_recv_ping_interval_without_data_ms = 5000,
         .min_pollers = 2,
         .max_pollers = 4,
-        .open_reflection = true,
     };
+    // auto m_grpc_server = peak::GrpcServer::create(m_config);
     auto m_grpc_server = std::make_unique<peak::GrpcServer>(config);
     namespace asio = boost::asio;
 
