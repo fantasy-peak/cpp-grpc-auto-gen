@@ -115,7 +115,7 @@ using ConcurrentChannel =
 #else
 template <typename T>
 using ConcurrentChannel =
-    asio::experimental::concurrent_channel<void(boost::system::error_code, T)>;
+    asio::experimental::concurrent_channel<void(asio::error_code, T)>;
 #endif
 
 /*************************************************** */
@@ -252,12 +252,11 @@ class GrpcServer final {
     void setExampleClientStreamingRpcCallback(auto cb) {
         m_example_client_streaming_rpc_handler = std::move(cb);
     }
-#if USE_GRPC_NOTIFY_WHEN_DONE
 
+#if USE_GRPC_NOTIFY_WHEN_DONE
     void setExampleServerStreamingNotifyWhenDoneRpcCallback(auto cb) {
         m_example_server_streaming_notify_when_done_rpc_handler = std::move(cb);
     }
-
 #endif
 
   private:
@@ -347,12 +346,13 @@ class GrpcServer final {
             },
             RethrowFirstArg{});
 
-        auto notify_when_done_request_handler_4 = [this](agrpc::GrpcContext&
-                                                             grpc_context) {
-            return [this, &grpc_context](
-                       ExampleServerStreamingNotifyWhenDoneRPC& rpc,
-                       ExampleServerStreamingNotifyWhenDoneRPC::Request&
-                           request) -> asio::awaitable<void> {
+        agrpc::register_awaitable_rpc_handler<
+            ExampleServerStreamingNotifyWhenDoneRPC>(
+            grpc_context,
+            *m_example_service,
+            [this](ExampleServerStreamingNotifyWhenDoneRPC& rpc,
+                   ExampleServerStreamingNotifyWhenDoneRPC::Request& request)
+                -> asio::awaitable<void> {
                 try {
                     co_await m_example_server_streaming_notify_when_done_rpc_handler(
                         rpc, request);
@@ -363,13 +363,7 @@ class GrpcServer final {
                           e.what());
                 }
                 co_return;
-            };
-        };
-        agrpc::register_awaitable_rpc_handler<
-            ExampleServerStreamingNotifyWhenDoneRPC>(
-            grpc_context,
-            *m_example_service,
-            notify_when_done_request_handler_4(grpc_context),
+            },
             RethrowFirstArg{});
 
         agrpc::register_awaitable_rpc_handler<ExampleClientStreamingRPC>(

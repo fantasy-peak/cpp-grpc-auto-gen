@@ -110,7 +110,7 @@ template <typename T>
 using ConcurrentChannel = asio::experimental::concurrent_channel<void(boost::system::error_code, T)>;
 #else
 template <typename T>
-using ConcurrentChannel = asio::experimental::concurrent_channel<void(boost::system::error_code, T)>;
+using ConcurrentChannel = asio::experimental::concurrent_channel<void(asio::error_code, T)>;
 #endif
 
 /*************************************************** */
@@ -229,19 +229,20 @@ public:
         m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler = std::move(cb);
     }
     {% endfor -%}
-    {% endfor -%}
+    {% endfor %}
+
 
 #if USE_GRPC_NOTIFY_WHEN_DONE
     {% for service_name in grpc.interface %}
-    {% for interface in grpc.interface[service_name] %}
-    {% if interface.type=='server-streaming-rpc' %}
+    {%- for interface in grpc.interface[service_name] -%}
+    {%- if interface.type=='server-streaming-rpc' -%}
     void set{{service_name}}{{interface.name}}NotifyWhenDoneRpcCallback(auto cb) {
         m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler = std::move(cb);
     }
-    {% else -%}
-    {% endif -%}
-    {% endfor -%}
-    {% endfor -%}
+    {%- else -%}
+    {%- endif -%}
+    {%- endfor -%}
+    {% endfor %}
 #endif
 
 private:
@@ -274,23 +275,19 @@ private:
         {%- for interface in grpc.interface[service_name] -%}
         {% if interface.type=='server-streaming-rpc' %}
 
-        auto notify_when_done_request_handler_{{ loop.index }} =
-            [this](agrpc::GrpcContext& grpc_context) {
-                return [this, &grpc_context]({{service_name}}{{interface.name}}NotifyWhenDoneRPC& rpc,
-                    {{service_name}}{{interface.name}}NotifyWhenDoneRPC::Request& request) -> asio::awaitable<void> {
-                    try {
-                        co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler(rpc, request);
-                    } catch (const std::exception& e) {
-                        m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
-                    }
-                    co_return;
-                };
-            };
         agrpc::register_awaitable_rpc_handler<
             {{service_name}}{{interface.name}}NotifyWhenDoneRPC>(
             grpc_context,
             *m_{{service_name|to_snake}}_service,
-            notify_when_done_request_handler_{{ loop.index }}(grpc_context),
+            [this]({{service_name}}{{interface.name}}NotifyWhenDoneRPC& rpc,
+                {{service_name}}{{interface.name}}NotifyWhenDoneRPC::Request& request) -> asio::awaitable<void> {
+                try {
+                    co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler(rpc, request);
+                } catch (const std::exception& e) {
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
+                }
+                co_return;
+            },
             RethrowFirstArg{});
         
         {% elif interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' %}
