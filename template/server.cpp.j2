@@ -1,0 +1,93 @@
+/**
+ *
+ *  @author fantasy-peak
+ *  Auto generate by https://github.com/fantasy-peak/cpp-grpc-auto-gen.git
+ *  Copyright 2024, fantasy-peak. All rights reserved.
+ *  Use of this source code is governed by a MIT license
+ *  that can be found in the License file.
+ *
+ */
+
+#include <spdlog/spdlog.h>
+
+#include <{{grpc.out_file | get_filename }}>
+
+namespace {{grpc.namespace}} {
+
+{% for service_name in grpc.interface -%}
+{% for interface in grpc.interface[service_name] -%}
+{% if interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' -%}
+asio::awaitable<void> proc_{{interface.name}}({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc)  {
+    (void)rpc;
+    spdlog::info("{{interface.type}} => {}", "{{service_name}}{{interface.name}}");
+    co_return;
+}
+{% elif interface.type=='server-streaming-rpc' %}
+#if USE_GRPC_NOTIFY_WHEN_DONE
+asio::awaitable<void> proc_{{interface.name}} ({{service_name}}{{interface.name}}NotifyWhenDoneRPC& rpc,
+                {{service_name}}{{interface.name}}NotifyWhenDoneRPC::Request& request) {
+    (void)rpc;
+    (void)request;
+    spdlog::info("USE_GRPC_NOTIFY_WHEN_DONE {{interface.type}} => {}", "{{service_name}}{{interface.name}}");
+    co_return;
+}
+#else
+asio::awaitable<void> proc_{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) {
+    (void)rpc;
+    (void)request;
+    spdlog::info("{{interface.type}} => {}", "{{service_name}}{{interface.name}}");
+    co_return;
+}
+#endif
+
+{% else -%}
+asio::awaitable<void> proc_{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) {
+    (void)rpc;
+    (void)request;
+    spdlog::info("{{interface.type}} => {}", "{{service_name}}{{interface.name}}");
+    co_return;
+}
+{% endif -%}
+{% endfor -%}
+{% endfor %}
+
+}
+
+int main() {
+    {{grpc.namespace}}::GrpcConfig config{
+        .host = "0.0.0.0:5566",
+        .thread_count = 1,
+        .keepalive_time_ms = 10000,
+        .keepalive_timeout_ms = 10000,
+        .keepalive_permit_without_calls = 1,
+        .http2_max_pings_without_data = 0,
+        .http2_min_sent_ping_interval_without_data_ms = 10000,
+        .http2_min_recv_ping_interval_without_data_ms = 5000,
+        .min_pollers = 2,
+        .max_pollers = 4,
+    };
+    auto m_grpc_server = std::make_unique<{{grpc.namespace}}::{{grpc.class_name}}>(config);
+    namespace asio = boost::asio;
+
+    {% for service_name in grpc.interface -%}
+    {% for interface in grpc.interface[service_name] -%}
+    {% if interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' -%}
+    m_grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc_{{interface.name}}));
+    {% elif interface.type=='server-streaming-rpc' %}
+    #if USE_GRPC_NOTIFY_WHEN_DONE
+        m_grpc_server->set{{service_name}}{{interface.name}}NotifyWhenDoneRpcCallback(std::bind_front({{grpc.namespace}}::proc_{{interface.name}}));
+    #else
+        m_grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc_{{interface.name}}));
+    #endif
+    {% else -%}
+    m_grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc_{{interface.name}}));
+    {% endif -%}
+    {% endfor -%}
+    {% endfor -%}
+
+    m_grpc_server->start();
+    std::this_thread::sleep_for(std::chrono::seconds(5000));
+    m_grpc_server->stop();
+
+    return 0;
+}

@@ -4,6 +4,7 @@ import json
 from jinja2 import *
 import argparse
 import subprocess
+import stringcase
 
 def get_filename(path):
     return path.split('/')[-1]
@@ -58,9 +59,19 @@ if __name__ == "__main__":
     with open(dir_path + '/' + 'xmake.lua', 'w') as file:
         file.write(htmlout)
 
-    template = jenv.get_template("./template/main.cpp.j2")
+    template = jenv.get_template("./template/server.cpp.j2")
     htmlout = template.render(grpc=config)
 
-    with open(dir_path + '/src/' + 'main.cpp', 'w') as file:
+    with open(dir_path + '/src/' + 'server.cpp', 'w') as file:
         file.write(htmlout)
-    
+    os.system('{} -i {}'.format(args.format, dir_path + '/src/' + 'server.cpp'))
+
+    for service_name, method_list in config['interface'].items():
+        tmp = config.copy()
+        tmp['interface'] = {}
+        tmp['interface'][service_name] = method_list
+        template = jenv.get_template("./template/client.cpp.j2")
+        htmlout = template.render(grpc=tmp)
+        with open(dir_path + '/src/' + f'{stringcase.snakecase(service_name)}_client.cpp', 'w') as file:
+            file.write(htmlout)
+        os.system('{} -i {}'.format(args.format, dir_path + '/src/' + f'{stringcase.snakecase(service_name)}_client.cpp'))
