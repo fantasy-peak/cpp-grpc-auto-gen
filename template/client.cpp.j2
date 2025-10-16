@@ -38,7 +38,7 @@ class RoundRobin
   private:
     Iterator begin_;
     std::size_t size_;
-    std::atomic_size_t current_{};
+    std::atomic_size_t current_{0};
 };
 
 struct GuardedGrpcContext

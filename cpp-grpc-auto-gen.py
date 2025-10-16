@@ -1,77 +1,100 @@
 import os
 import yaml
-import json
-from jinja2 import *
+from jinja2 import Environment, FileSystemLoader
 import argparse
 import subprocess
 import stringcase
+import shutil
 
 def get_filename(path):
-    return path.split('/')[-1]
+    """Extracts the filename from a path."""
+    return os.path.basename(path)
 
 def load_yaml(yaml_path):
+    """Loads a YAML file."""
     with open(yaml_path, encoding="utf-8") as f:
-        datas = yaml.load(f,Loader=yaml.FullLoader)
-    json_datas = json.dumps(datas, indent=5)
-    return json.loads(json_datas)
+        return yaml.load(f, Loader=yaml.FullLoader)
+
+def render_write_format(template_name, output_path, render_config, jenv, formatter):
+    """Renders a template, writes it to a file, and optionally formats it."""
+    template = jenv.get_template(template_name)
+    content = template.render(grpc=render_config)
+    with open(output_path, 'w') as f:
+        f.write(content)
+    
+    if formatter and formatter.lower() != 'none':
+        try:
+            subprocess.run([formatter, "-i", output_path], check=True)
+            print(f"Generated and formatted {output_path}")
+        except FileNotFoundError:
+            print(f"Warning: Formatter '{formatter}' not found. Skipping formatting for {output_path}")
+    else:
+        print(f"Generated {output_path}")
+
+def copy_proto_files(proto_files, dest_dir):
+    """Copies proto files to the destination directory."""
+    if not proto_files:
+        print("No proto files specified in the config (expected 'proto_files' key). Skipping copy.")
+        return
+    for proto_file in proto_files:
+        if os.path.exists(proto_file):
+            shutil.copy(proto_file, dest_dir)
+            print(f"Copied {proto_file} to {dest_dir}")
+        else:
+            print(f"Warning: Proto file not found: {proto_file}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="cpp-grpc-auto-gen")
-    parser.add_argument('--proto', type=str, default='./proto.yaml', help='proto config file')
-    parser.add_argument('--template', type=str, default='./template/grpc_server.j2', help='template file')
-    parser.add_argument('--format', type=str, default='clang-format', help='clang-format')
-    parser.add_argument('--out_file', type=str, required=True, help='output file')
+    parser = argparse.ArgumentParser(
+        description="Generate C++ gRPC server and client code from a YAML configuration.",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument('--proto', type=str, default='proto.yaml', help='Path to the proto config file (e.g., proto.yaml)')
+    parser.add_argument('--template', type=str, default='template/grpc_server.j2', help='Path to the main Jinja2 template file')
+    parser.add_argument('--format', type=str, default='clang-format', help='Code formatter command (e.g., clang-format). Use "none" to disable.')
+    parser.add_argument('--out_file', type=str, required=True, help='Output path for the main generated header file')
     args = parser.parse_args()
 
-    yaml_path = args.proto
-    loader = FileSystemLoader(searchpath="./")
+    # --- Setup ---
+    config = load_yaml(args.proto)
+    template_dir = os.path.dirname(args.template)
+    loader = FileSystemLoader(searchpath=template_dir if template_dir else "./")
     jenv = Environment(loader=loader, extensions=['jinja2_strcase.StrcaseExtension'])
     jenv.filters['get_filename'] = get_filename
-    template = jenv.get_template(args.template)
-    config = load_yaml(yaml_path)
+
+    # --- Main File Generation ---
     config['out_file'] = args.out_file
-    config['package'] = config['package'].replace('.', '::')
-    htmlout = template.render(grpc=config)
-    print(htmlout)
-    with open(config['out_file'], 'w') as file:
-        file.write(htmlout)
-    os.system('{} -i {}'.format(args.format, config['out_file']))
+    config['package'] = config.get('package', '').replace('.', '::')
+    
+    main_template_name = os.path.basename(args.template)
+    render_write_format(main_template_name, args.out_file, config, jenv, args.format)
+    print(f"\nMain header file generated at: {args.out_file}")
 
-    # create example
-    dir_path = "example_project"
-    os.makedirs(dir_path, exist_ok=True)
+    # --- Example Project Generation ---
+    print("\n--- Generating Project ---")
+    example_dir = "example_project"
+    src_dir = os.path.join(example_dir, "src")
+    include_dir = os.path.join(example_dir, "include")
+    proto_dir = os.path.join(example_dir, "proto")
 
-    dir_path = "example_project/proto"
-    os.makedirs(dir_path, exist_ok=True)
+    for d in [src_dir, include_dir, proto_dir]:
+        os.makedirs(d, exist_ok=True)
 
-    dir_path = "example_project/src"
-    os.makedirs(dir_path, exist_ok=True)
+    shutil.copy(args.out_file, include_dir)
+    print(f"Copied generated header to {include_dir}")
 
-    dir_path = "example_project/include"
-    os.makedirs(dir_path, exist_ok=True)
-    subprocess.run(["cp", config['out_file'], dir_path], check=True)
+    # Assumes 'proto_files' key in YAML, e.g.:
+    # proto_files:
+    #   - path/to/your.proto
+    copy_proto_files(config.get('proto_files', []), proto_dir)
 
-    dir_path = "example_project"
+    # Generate xmake.lua, server, and client files
+    render_write_format("xmake.j2", os.path.join(example_dir, "xmake.lua"), config, jenv, None)
+    render_write_format("server.cpp.j2", os.path.join(src_dir, "server.cpp"), config, jenv, args.format)
 
-    template = jenv.get_template("./template/xmake.j2")
-    htmlout = template.render(grpc=config)
-
-    with open(dir_path + '/' + 'xmake.lua', 'w') as file:
-        file.write(htmlout)
-
-    template = jenv.get_template("./template/server.cpp.j2")
-    htmlout = template.render(grpc=config)
-
-    with open(dir_path + '/src/' + 'server.cpp', 'w') as file:
-        file.write(htmlout)
-    os.system('{} -i {}'.format(args.format, dir_path + '/src/' + 'server.cpp'))
-
-    for service_name, method_list in config['interface'].items():
-        tmp = config.copy()
-        tmp['interface'] = {}
-        tmp['interface'][service_name] = method_list
-        template = jenv.get_template("./template/client.cpp.j2")
-        htmlout = template.render(grpc=tmp)
-        with open(dir_path + '/src/' + f'{stringcase.snakecase(service_name)}_client.cpp', 'w') as file:
-            file.write(htmlout)
-        os.system('{} -i {}'.format(args.format, dir_path + '/src/' + f'{stringcase.snakecase(service_name)}_client.cpp'))
+    for service_name, method_list in config.get('interface', {}).items():
+        tmp_config = config.copy()
+        tmp_config['interface'] = {service_name: method_list}
+        client_out_path = os.path.join(src_dir, f"{stringcase.snakecase(service_name)}_client.cpp")
+        render_write_format("client.cpp.j2", client_out_path, tmp_config, jenv, args.format)
+    
+    print("\nproject generation complete.")

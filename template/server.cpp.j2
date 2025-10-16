@@ -17,14 +17,14 @@ namespace {{grpc.namespace}} {
 {% for service_name in grpc.interface -%}
 {% for interface in grpc.interface[service_name] -%}
 {% if interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' -%}
-asio::awaitable<void> proc_{{interface.name}}({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc)  {
+asio::awaitable<void> proc{{interface.name}}({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc)  {
     (void)rpc;
     spdlog::info("{{interface.type}} => {}", "{{service_name}}{{interface.name}}");
     co_return;
 }
 {% elif interface.type=='server-streaming-rpc' %}
 #if USE_GRPC_NOTIFY_WHEN_DONE
-asio::awaitable<void> proc_{{interface.name}} ({{service_name}}{{interface.name}}NotifyWhenDoneRPC& rpc,
+asio::awaitable<void> proc{{interface.name}} ({{service_name}}{{interface.name}}NotifyWhenDoneRPC& rpc,
                 {{service_name}}{{interface.name}}NotifyWhenDoneRPC::Request& request) {
     (void)rpc;
     (void)request;
@@ -32,7 +32,7 @@ asio::awaitable<void> proc_{{interface.name}} ({{service_name}}{{interface.name}
     co_return;
 }
 #else
-asio::awaitable<void> proc_{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) {
+asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) {
     (void)rpc;
     (void)request;
     spdlog::info("{{interface.type}} => {}", "{{service_name}}{{interface.name}}");
@@ -41,7 +41,7 @@ asio::awaitable<void> proc_{{interface.name}} ({{grpc.namespace}}::{{service_nam
 #endif
 
 {% else -%}
-asio::awaitable<void> proc_{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) {
+asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) {
     (void)rpc;
     (void)request;
     spdlog::info("{{interface.type}} => {}", "{{service_name}}{{interface.name}}");
@@ -56,15 +56,15 @@ asio::awaitable<void> proc_{{interface.name}} ({{grpc.namespace}}::{{service_nam
 int main() {
     {{grpc.namespace}}::GrpcConfig config{
         .host = "0.0.0.0:5566",
-        .thread_count = 1,
+        .thread_count = 4,
         .keepalive_time_ms = 10000,
         .keepalive_timeout_ms = 10000,
         .keepalive_permit_without_calls = 1,
         .http2_max_pings_without_data = 0,
         .http2_min_sent_ping_interval_without_data_ms = 10000,
         .http2_min_recv_ping_interval_without_data_ms = 5000,
-        .min_pollers = 2,
-        .max_pollers = 4,
+        .min_pollers = std::nullopt,
+        .max_pollers = std::nullopt,
     };
     auto m_grpc_server = std::make_unique<{{grpc.namespace}}::{{grpc.class_name}}>(config);
     namespace asio = boost::asio;
@@ -72,15 +72,15 @@ int main() {
     {% for service_name in grpc.interface -%}
     {% for interface in grpc.interface[service_name] -%}
     {% if interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' -%}
-    m_grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc_{{interface.name}}));
-    {% elif interface.type=='server-streaming-rpc' %}
+    m_grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
+    {% elif interface.type=='server-streaming-rpc' -%}
     #if USE_GRPC_NOTIFY_WHEN_DONE
-        m_grpc_server->set{{service_name}}{{interface.name}}NotifyWhenDoneRpcCallback(std::bind_front({{grpc.namespace}}::proc_{{interface.name}}));
+        m_grpc_server->set{{service_name}}{{interface.name}}NotifyWhenDoneRpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
     #else
-        m_grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc_{{interface.name}}));
+        m_grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
     #endif
     {% else -%}
-    m_grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc_{{interface.name}}));
+    m_grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
     {% endif -%}
     {% endfor -%}
     {% endfor -%}
