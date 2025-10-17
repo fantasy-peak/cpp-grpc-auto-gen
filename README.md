@@ -42,7 +42,8 @@ The main script `cpp-grpc-auto-gen.py` is used to generate the code. The script 
     python3 cpp-grpc-auto-gen.py \
       --proto proto.yaml \
       --template template/grpc_server.j2 \
-      --out_file example/include/grpc_server.hpp \
+      --out_server_file example/include/grpc_server.hpp \
+      --out_client_file example/include/grpc_client.hpp \
       --format=clang-format
     ```
 
@@ -61,7 +62,8 @@ Here is an example of a `proto.yaml` file:
 ```yaml
 ---
 namespace: peak
-class_name: GrpcServer
+server_class_name: GrpcServer
+client_class_name: ClientServer
 include_grpc_files: [example.grpc.pb.h, example.pb.h]
 package: fantasy.v1
 proto_files: [example/example.proto, example/health.proto]
@@ -92,10 +94,12 @@ interface:
       input: OrderRequest
       output: OrderResponse
       type: client-streaming-rpc
+
 ```
 
 - `namespace`: The C++ namespace for the generated server class.
-- `class_name`: The name of the main generated server class.
+- `server_class_name`: The name of the main generated server class.
+- `client_class_name`: The name of the main generated client class.
 - `include_grpc_files`: A list of header files to include in the main generated header.
 - `package`: The gRPC package name from your proto definition.
 - `proto_files`: A list of `.proto` files to be copied into the generated project.
@@ -108,7 +112,8 @@ interface:
 ## Customization
 
 You can customize the generated code by modifying the Jinja2 templates located in the `template/` directory:
-- `grpc_server.j2`: Template for the main server header.
+- `grpc_server.hpp.j2`: Template for the main server header.
+- `grpc_client.hpp.j2`: Template for the client header.
 - `server.cpp.j2`: Template for the server's main implementation.
 - `client.cpp.j2`: Template for the auto-generated clients.
 - `xmake.j2`: Template for the `xmake.lua` build file.

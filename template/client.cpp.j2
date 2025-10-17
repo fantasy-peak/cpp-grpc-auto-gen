@@ -8,50 +8,17 @@
  *
  */
 
-#include <memory>
 #include <thread>
-#include <vector>
 
-#include <agrpc/client_rpc.hpp>
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/executor_work_guard.hpp>
-#include <grpcpp/client_context.h>
-#include <grpcpp/create_channel.h>
+#include <{{grpc.out_client_file | get_filename }}>
 
-#include <{{grpc.out_file | get_filename }}>
-
-namespace asio = boost::asio;
-
-template <class Iterator>
-class RoundRobin
-{
-  public:
-    RoundRobin(Iterator begin, std::size_t size) : begin_(begin), size_(size) {}
-
-    decltype(auto) next()
-    {
-        const auto cur = current_.fetch_add(1, std::memory_order_relaxed);
-        const auto pos = cur % size_;
-        return *std::next(begin_, static_cast<std::ptrdiff_t>(pos));
-    }
-
-  private:
-    Iterator begin_;
-    std::size_t size_;
-    std::atomic_size_t current_{0};
-};
-
-struct GuardedGrpcContext
-{
-    agrpc::GrpcContext context;
-    asio::executor_work_guard<agrpc::GrpcContext::executor_type> guard{context.get_executor()};
-};
+namespace {{grpc.namespace}} {
 
 {% for service_name in grpc.interface -%}
 {% for interface in grpc.interface[service_name] -%}
 {% if interface.type=='server-streaming-rpc' -%}
 asio::awaitable<void> make{{interface.name}}Request(agrpc::GrpcContext& grpc_context, {{grpc.package}}::{{service_name}}::Stub& stub)  {
-    using RPC = agrpc::ClientRPC<&{{grpc.package}}::{{service_name}}::Stub::PrepareAsyncServerStreaming>;
+    using RPC = agrpc::ClientRPC<&{{grpc.package}}::{{service_name}}::Stub::PrepareAsync{{interface.name}}>;
     grpc::ClientContext client_context;
     client_context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
 
@@ -75,7 +42,7 @@ asio::awaitable<void> make{{interface.name}}Request(agrpc::GrpcContext& grpc_con
 {% elif interface.type=='client-streaming-rpc' %}
 
 asio::awaitable<void> make{{interface.name}}Request(agrpc::GrpcContext& grpc_context, {{grpc.package}}::{{service_name}}::Stub& stub) {
-    using RPC = agrpc::ClientRPC<&{{grpc.package}}::{{service_name}}::Stub::PrepareAsyncClientStreaming>;
+    using RPC = agrpc::ClientRPC<&{{grpc.package}}::{{service_name}}::Stub::PrepareAsync{{interface.name}}>;
     RPC rpc{grpc_context};
     rpc.context().set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
 
@@ -142,6 +109,7 @@ asio::awaitable<void> make{{interface.name}}Request(agrpc::GrpcContext& grpc_con
 {% endfor -%}
 {% endfor %}
 
+}  // namespace {{grpc.namespace}}
 
 int main(int argc, const char** argv)
 {
@@ -150,66 +118,11 @@ int main(int argc, const char** argv)
     const auto thread_count = std::thread::hardware_concurrency();
 
     {% for service_name in grpc.interface -%}
-
-    {{grpc.package}}::{{service_name}}::Stub stub(grpc::CreateChannel(host, grpc::InsecureChannelCredentials()));
-    std::vector<std::unique_ptr<GuardedGrpcContext>> grpc_contexts;
-    for (size_t i = 0; i < thread_count; ++i)
-    {
-        grpc_contexts.emplace_back(std::make_unique<GuardedGrpcContext>());
-    }
-
-    // Create one thread per GrpcContext.
-    std::vector<std::thread> threads;
-    threads.reserve(thread_count);
-    for (size_t i = 0; i < thread_count; ++i)
-    {
-        threads.emplace_back(
-            [&, i]
-            {
-                grpc_contexts[i]->context.run();
-            });
-    }
-
-    RoundRobin round_robin_grpc_contexts{grpc_contexts.begin(), thread_count};
-
+    {{grpc.namespace}}::{{grpc.client_class_name}} client{host, thread_count};
     {% for interface in grpc.interface[service_name] -%}
-
-        {% if interface.type=='server-streaming-rpc' %}
-            {
-                // server-streaming-rpc
-                auto& grpc_context = round_robin_grpc_contexts.next()->context;
-                asio::co_spawn(grpc_context,  make{{interface.name}}Request(grpc_context, stub), {{grpc.namespace}}::RethrowFirstArg{});
-            }
-        {% elif interface.type=='unary-rpc' %}
-            {
-                // unary-rpc
-                auto& grpc_context = round_robin_grpc_contexts.next()->context;
-                asio::co_spawn(grpc_context, make{{interface.name}}Request(grpc_context, stub), {{grpc.namespace}}::RethrowFirstArg{});
-            }
-        {% elif interface.type=='client-streaming-rpc' %}
-            {
-                // client-streaming-rpc
-                auto& grpc_context = round_robin_grpc_contexts.next()->context;
-                asio::co_spawn(grpc_context, make{{interface.name}}Request(grpc_context, stub), {{grpc.namespace}}::RethrowFirstArg{});
-            }
-        {% else %}
-            { 
-                auto& grpc_context = round_robin_grpc_contexts.next()->context;
-                asio::co_spawn(grpc_context, make{{interface.name}}Request(grpc_context, stub), {{grpc.namespace}}::RethrowFirstArg{});
-            }
-        {% endif -%}
+        client.{{interface.name | to_lower_camel}}({{grpc.namespace}}::make{{interface.name}}Request);
     {% endfor %}
-    
-    for (auto& grpc_context : grpc_contexts)
-    {
-        grpc_context->guard.reset();
-    }
 
-    for (auto& thread : threads)
-    {
-        thread.join();
-    }
-    
     {% endfor -%}
     return 0;
 }

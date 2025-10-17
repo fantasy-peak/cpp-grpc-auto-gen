@@ -51,7 +51,8 @@ if __name__ == "__main__":
     parser.add_argument('--proto', type=str, default='proto.yaml', help='Path to the proto config file (e.g., proto.yaml)')
     parser.add_argument('--template', type=str, default='template/grpc_server.j2', help='Path to the main Jinja2 template file')
     parser.add_argument('--format', type=str, default='clang-format', help='Code formatter command (e.g., clang-format). Use "none" to disable.')
-    parser.add_argument('--out_file', type=str, required=True, help='Output path for the main generated header file')
+    parser.add_argument('--out_server_file', type=str, required=True, help='Output path for the main generated header file')
+    parser.add_argument('--out_client_file', type=str, required=True, help='Output path for the main generated header file')
     args = parser.parse_args()
 
     # --- Setup ---
@@ -62,12 +63,14 @@ if __name__ == "__main__":
     jenv.filters['get_filename'] = get_filename
 
     # --- Main File Generation ---
-    config['out_file'] = args.out_file
+    config['out_server_file'] = args.out_server_file
+    config['out_client_file'] = args.out_client_file
     config['package'] = config.get('package', '').replace('.', '::')
-    
-    main_template_name = os.path.basename(args.template)
-    render_write_format(main_template_name, args.out_file, config, jenv, args.format)
-    print(f"\nMain header file generated at: {args.out_file}")
+
+    render_write_format("grpc_server.hpp.j2", args.out_server_file, config, jenv, args.format)
+    print(f"Main header file generated at: {args.out_server_file}")
+    render_write_format("grpc_client.hpp.j2", args.out_client_file, config, jenv, args.format)
+    print(f"Main header file generated at: {args.out_client_file}")
 
     # --- Example Project Generation ---
     print("\n--- Generating Project ---")
@@ -79,8 +82,10 @@ if __name__ == "__main__":
     for d in [src_dir, include_dir, proto_dir]:
         os.makedirs(d, exist_ok=True)
 
-    shutil.copy(args.out_file, include_dir)
-    print(f"Copied generated header to {include_dir}")
+    shutil.copy(args.out_server_file, include_dir)
+    print(f"Copied generated header {args.out_server_file} to {include_dir}")
+    shutil.copy(args.out_client_file, include_dir)
+    print(f"Copied generated header {args.out_client_file} to {include_dir}")
 
     # Assumes 'proto_files' key in YAML, e.g.:
     # proto_files:

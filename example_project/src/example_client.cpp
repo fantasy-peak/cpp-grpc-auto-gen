@@ -8,43 +8,11 @@
  *
  */
 
-#include <memory>
 #include <thread>
-#include <vector>
 
-#include <agrpc/client_rpc.hpp>
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/executor_work_guard.hpp>
-#include <grpcpp/client_context.h>
-#include <grpcpp/create_channel.h>
+#include <grpc_client.hpp>
 
-#include <grpc_server.hpp>
-
-namespace asio = boost::asio;
-
-template <class Iterator>
-class RoundRobin {
-  public:
-    RoundRobin(Iterator begin, std::size_t size) : begin_(begin), size_(size) {
-    }
-
-    decltype(auto) next() {
-        const auto cur = current_.fetch_add(1, std::memory_order_relaxed);
-        const auto pos = cur % size_;
-        return *std::next(begin_, static_cast<std::ptrdiff_t>(pos));
-    }
-
-  private:
-    Iterator begin_;
-    std::size_t size_;
-    std::atomic_size_t current_{0};
-};
-
-struct GuardedGrpcContext {
-    agrpc::GrpcContext context;
-    asio::executor_work_guard<agrpc::GrpcContext::executor_type> guard{
-        context.get_executor()};
-};
+namespace peak {
 
 asio::awaitable<void> makeNoticeRequest(agrpc::GrpcContext& grpc_context,
                                         fantasy::v1::Example::Stub& stub) {
@@ -161,73 +129,19 @@ asio::awaitable<void> makeClientStreamingRequest(
     co_return;
 }
 
+}  // namespace peak
+
 int main(int argc, const char** argv) {
     const char* port = argc >= 2 ? argv[1] : "5566";
     const auto host = std::string("localhost:") + port;
     const auto thread_count = std::thread::hardware_concurrency();
 
-    fantasy::v1::Example::Stub stub(
-        grpc::CreateChannel(host, grpc::InsecureChannelCredentials()));
-    std::vector<std::unique_ptr<GuardedGrpcContext>> grpc_contexts;
-    for (size_t i = 0; i < thread_count; ++i) {
-        grpc_contexts.emplace_back(std::make_unique<GuardedGrpcContext>());
-    }
-
-    // Create one thread per GrpcContext.
-    std::vector<std::thread> threads;
-    threads.reserve(thread_count);
-    for (size_t i = 0; i < thread_count; ++i) {
-        threads.emplace_back([&, i] { grpc_contexts[i]->context.run(); });
-    }
-
-    RoundRobin round_robin_grpc_contexts{grpc_contexts.begin(), thread_count};
-
-    {
-        auto& grpc_context = round_robin_grpc_contexts.next()->context;
-        asio::co_spawn(grpc_context,
-                       makeNoticeRequest(grpc_context, stub),
-                       peak::RethrowFirstArg{});
-    }
-
-    {
-        // unary-rpc
-        auto& grpc_context = round_robin_grpc_contexts.next()->context;
-        asio::co_spawn(grpc_context,
-                       makeOrderRequest(grpc_context, stub),
-                       peak::RethrowFirstArg{});
-    }
-
-    {
-        // unary-rpc
-        auto& grpc_context = round_robin_grpc_contexts.next()->context;
-        asio::co_spawn(grpc_context,
-                       makeGetOrderSeqNoRequest(grpc_context, stub),
-                       peak::RethrowFirstArg{});
-    }
-
-    {
-        // server-streaming-rpc
-        auto& grpc_context = round_robin_grpc_contexts.next()->context;
-        asio::co_spawn(grpc_context,
-                       makeServerStreamingRequest(grpc_context, stub),
-                       peak::RethrowFirstArg{});
-    }
-
-    {
-        // client-streaming-rpc
-        auto& grpc_context = round_robin_grpc_contexts.next()->context;
-        asio::co_spawn(grpc_context,
-                       makeClientStreamingRequest(grpc_context, stub),
-                       peak::RethrowFirstArg{});
-    }
-
-    for (auto& grpc_context : grpc_contexts) {
-        grpc_context->guard.reset();
-    }
-
-    for (auto& thread : threads) {
-        thread.join();
-    }
+    peak::ClientServer client{host, thread_count};
+    client.notice(peak::makeNoticeRequest);
+    client.order(peak::makeOrderRequest);
+    client.getOrderSeqNo(peak::makeGetOrderSeqNoRequest);
+    client.serverStreaming(peak::makeServerStreamingRequest);
+    client.clientStreaming(peak::makeClientStreamingRequest);
 
     return 0;
 }

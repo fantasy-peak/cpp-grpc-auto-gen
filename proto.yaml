@@ -1,6 +1,7 @@
 ---
 namespace: peak
-class_name: GrpcServer
+server_class_name: GrpcServer
+client_class_name: ClientServer
 include_grpc_files: [example.grpc.pb.h, example.pb.h]
 package: fantasy.v1
 proto_files: [example/example.proto, example/health.proto]

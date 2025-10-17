@@ -1,6 +1,6 @@
 /**
  *
- *  @file {{grpc.out_file | get_filename }}
+ *  @file {{grpc.out_server_file | get_filename }}
  *  @author fantasy-peak
  *  Auto generate by https://github.com/fantasy-peak/cpp-grpc-auto-gen.git
  *  Copyright 2024, fantasy-peak. All rights reserved.
@@ -136,20 +136,20 @@ using {{service_name}}{{interface.name}}NotifyWhenDoneRPC = NotifyWhenDoneServer
 #endif
 /*************************************************** */
 
-class {{grpc.class_name}} final {
+class {{grpc.server_class_name}} final {
 public:
-    {{grpc.class_name}}(GrpcConfig config)
+    {{grpc.server_class_name}}(GrpcConfig config)
         : m_config(std::move(config)) {
     }
-    ~{{grpc.class_name}}() = default;
+    ~{{grpc.server_class_name}}() = default;
 
-    {{grpc.class_name}}(const {{grpc.class_name}}&) = delete;
-    {{grpc.class_name}}& operator=(const {{grpc.class_name}}&) = delete;
-    {{grpc.class_name}}({{grpc.class_name}}&&) = delete;
-    {{grpc.class_name}}& operator=({{grpc.class_name}}&&) = delete;
+    {{grpc.server_class_name}}(const {{grpc.server_class_name}}&) = delete;
+    {{grpc.server_class_name}}& operator=(const {{grpc.server_class_name}}&) = delete;
+    {{grpc.server_class_name}}({{grpc.server_class_name}}&&) = delete;
+    {{grpc.server_class_name}}& operator=({{grpc.server_class_name}}&&) = delete;
 
     static auto create(GrpcConfig config) {
-        return std::make_unique<{{grpc.class_name}}>(std::move(config));
+        return std::make_unique<{{grpc.server_class_name}}>(std::move(config));
     }
 
     void start() {
@@ -402,7 +402,7 @@ private:
 #define USE_BOOST_CIRCULAR_BUFFER 1
 #endif
 
-#include <{{grpc.out_file | get_filename }}>
+#include <{{grpc.out_server_file | get_filename }}>
 
 int main() {
     {{grpc.namespace}}::GrpcConfig config{
@@ -417,8 +417,8 @@ int main() {
         .min_pollers = 2,
         .max_pollers = 4,
     };
-    // auto m_grpc_server = {{grpc.namespace}}::{{grpc.class_name}}::create(m_config);
-    auto m_grpc_server = std::make_unique<{{grpc.namespace}}::{{grpc.class_name}}>(config);
+    // auto m_grpc_server = {{grpc.namespace}}::{{grpc.server_class_name}}::create(m_config);
+    auto m_grpc_server = std::make_unique<{{grpc.namespace}}::{{grpc.server_class_name}}>(config);
     namespace asio = boost::asio;
 
     {% for service_name in grpc.interface -%}

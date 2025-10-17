@@ -14,6 +14,17 @@
 
 namespace peak {
 
+std::string toJson(auto& request) {
+    google::protobuf::util::JsonPrintOptions options;
+    options.add_whitespace = true;
+    options.always_print_fields_with_no_presence = true;
+    std::string json_output;
+    absl::Status ret = google::protobuf::util::MessageToJsonString(request,
+                                                                   &json_output,
+                                                                   options);
+    return json_output;
+}
+
 asio::awaitable<void> procNotice(peak::ExampleNoticeRPC& rpc) {
     (void)rpc;
     spdlog::info("bidirectional-streaming-rpc => {}", "ExampleNotice");
@@ -24,7 +35,7 @@ asio::awaitable<void> procOrder(peak::ExampleOrderRPC& rpc,
                                 fantasy::v1::OrderRequest& request) {
     (void)rpc;
     (void)request;
-    spdlog::info("unary-rpc => {}", "ExampleOrder");
+    spdlog::info("unary-rpc, procOrder ExampleOrder => {}", toJson(request));
     co_return;
 }
 
@@ -33,7 +44,8 @@ asio::awaitable<void> procGetOrderSeqNo(
     fantasy::v1::GetOrderSeqNoRequest& request) {
     (void)rpc;
     (void)request;
-    spdlog::info("unary-rpc => {}", "ExampleGetOrderSeqNo");
+    spdlog::info("unary-rpc, procGetOrderSeqNo ExampleGetOrderSeqNo => {}",
+                 toJson(request));
     co_return;
 }
 
@@ -43,8 +55,10 @@ asio::awaitable<void> procServerStreaming(
     ExampleServerStreamingNotifyWhenDoneRPC::Request& request) {
     (void)rpc;
     (void)request;
-    spdlog::info("USE_GRPC_NOTIFY_WHEN_DONE server-streaming-rpc => {}",
-                 "ExampleServerStreaming");
+    spdlog::info(
+        "USE_GRPC_NOTIFY_WHEN_DONE server-streaming-rpc, procServerStreaming "
+        "ExampleServerStreaming => {}",
+        toJson(request));
     co_return;
 }
 #else
@@ -52,7 +66,10 @@ asio::awaitable<void> procServerStreaming(peak::ExampleServerStreamingRPC& rpc,
                                           fantasy::v1::OrderRequest& request) {
     (void)rpc;
     (void)request;
-    spdlog::info("server-streaming-rpc => {}", "ExampleServerStreaming");
+    spdlog::info(
+        "server-streaming-rpc, procServerStreaming ExampleServerStreaming => "
+        "{}",
+        toJson(request));
     co_return;
 }
 #endif
