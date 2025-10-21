@@ -101,9 +101,9 @@ using AwaitableServerRPC =
 
 using ExampleService = fantasy::v1::Example::AsyncService;
 using ExampleNoticeRPC = AwaitableServerRPC<&ExampleService::RequestNotice>;
-using ExampleOrderRPC = AwaitableServerRPC<&ExampleService::RequestOrder>;
 using ExampleGetOrderSeqNoRPC =
     AwaitableServerRPC<&ExampleService::RequestGetOrderSeqNo>;
+using ExampleOrderRPC = AwaitableServerRPC<&ExampleService::RequestOrder>;
 using ExampleServerStreamingRPC =
     AwaitableServerRPC<&ExampleService::RequestServerStreaming>;
 using ExampleClientStreamingRPC =
@@ -237,12 +237,12 @@ class GrpcServer final {
         m_example_notice_rpc_handler = std::move(cb);
     }
 
-    void setExampleOrderRpcCallback(auto cb) {
-        m_example_order_rpc_handler = std::move(cb);
-    }
-
     void setExampleGetOrderSeqNoRpcCallback(auto cb) {
         m_example_get_order_seq_no_rpc_handler = std::move(cb);
+    }
+
+    void setExampleOrderRpcCallback(auto cb) {
+        m_example_order_rpc_handler = std::move(cb);
     }
 
     void setExampleServerStreamingRpcCallback(auto cb) {
@@ -264,11 +264,11 @@ class GrpcServer final {
 #if USE_GRPC_NOTIFY_WHEN_DONE
         if (!m_example_notice_rpc_handler)
             throw std::runtime_error("not call setExampleNoticeRpcCallback");
-        if (!m_example_order_rpc_handler)
-            throw std::runtime_error("not call setExampleOrderRpcCallback");
         if (!m_example_get_order_seq_no_rpc_handler)
             throw std::runtime_error(
                 "not call setExampleGetOrderSeqNoRpcCallback");
+        if (!m_example_order_rpc_handler)
+            throw std::runtime_error("not call setExampleOrderRpcCallback");
         if (!m_example_server_streaming_notify_when_done_rpc_handler)
             throw std::runtime_error(
                 "not call setExampleServerStreamingNotifyWhenDoneRpcCallback");
@@ -278,11 +278,11 @@ class GrpcServer final {
 #else
         if (!m_example_notice_rpc_handler)
             throw std::runtime_error("not call setExampleNoticeRpcCallback");
-        if (!m_example_order_rpc_handler)
-            throw std::runtime_error("not call setExampleOrderRpcCallback");
         if (!m_example_get_order_seq_no_rpc_handler)
             throw std::runtime_error(
                 "not call setExampleGetOrderSeqNoRpcCallback");
+        if (!m_example_order_rpc_handler)
+            throw std::runtime_error("not call setExampleOrderRpcCallback");
         if (!m_example_server_streaming_rpc_handler)
             throw std::runtime_error(
                 "not call setExampleServerStreamingRpcCallback");
@@ -310,13 +310,15 @@ class GrpcServer final {
             },
             RethrowFirstArg{});
 
-        agrpc::register_awaitable_rpc_handler<ExampleOrderRPC>(
+        agrpc::register_awaitable_rpc_handler<ExampleGetOrderSeqNoRPC>(
             grpc_context,
             *m_example_service,
-            [this](ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request)
+            [this](ExampleGetOrderSeqNoRPC& rpc,
+                   fantasy::v1::GetOrderSeqNoRequest& request)
                 -> asio::awaitable<void> {
                 try {
-                    co_await m_example_order_rpc_handler(rpc, request);
+                    co_await m_example_get_order_seq_no_rpc_handler(rpc,
+                                                                    request);
                 } catch (const std::exception& e) {
                     m_log(LogLevel::Error,
                           extractFilename(__FILE__),
@@ -327,15 +329,13 @@ class GrpcServer final {
             },
             RethrowFirstArg{});
 
-        agrpc::register_awaitable_rpc_handler<ExampleGetOrderSeqNoRPC>(
+        agrpc::register_awaitable_rpc_handler<ExampleOrderRPC>(
             grpc_context,
             *m_example_service,
-            [this](ExampleGetOrderSeqNoRPC& rpc,
-                   fantasy::v1::GetOrderSeqNoRequest& request)
+            [this](ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request)
                 -> asio::awaitable<void> {
                 try {
-                    co_await m_example_get_order_seq_no_rpc_handler(rpc,
-                                                                    request);
+                    co_await m_example_order_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
                     m_log(LogLevel::Error,
                           extractFilename(__FILE__),
@@ -399,13 +399,15 @@ class GrpcServer final {
             },
             RethrowFirstArg{});
 
-        agrpc::register_awaitable_rpc_handler<ExampleOrderRPC>(
+        agrpc::register_awaitable_rpc_handler<ExampleGetOrderSeqNoRPC>(
             grpc_context,
             *m_example_service,
-            [this](ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request)
+            [this](ExampleGetOrderSeqNoRPC& rpc,
+                   fantasy::v1::GetOrderSeqNoRequest& request)
                 -> asio::awaitable<void> {
                 try {
-                    co_await m_example_order_rpc_handler(rpc, request);
+                    co_await m_example_get_order_seq_no_rpc_handler(rpc,
+                                                                    request);
                 } catch (const std::exception& e) {
                     m_log(LogLevel::Error,
                           extractFilename(__FILE__),
@@ -416,15 +418,13 @@ class GrpcServer final {
             },
             RethrowFirstArg{});
 
-        agrpc::register_awaitable_rpc_handler<ExampleGetOrderSeqNoRPC>(
+        agrpc::register_awaitable_rpc_handler<ExampleOrderRPC>(
             grpc_context,
             *m_example_service,
-            [this](ExampleGetOrderSeqNoRPC& rpc,
-                   fantasy::v1::GetOrderSeqNoRequest& request)
+            [this](ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request)
                 -> asio::awaitable<void> {
                 try {
-                    co_await m_example_get_order_seq_no_rpc_handler(rpc,
-                                                                    request);
+                    co_await m_example_order_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
                     m_log(LogLevel::Error,
                           extractFilename(__FILE__),
@@ -480,12 +480,12 @@ class GrpcServer final {
 
     std::function<asio::awaitable<void>(ExampleNoticeRPC&)>
         m_example_notice_rpc_handler;
-    std::function<asio::awaitable<void>(ExampleOrderRPC&,
-                                        fantasy::v1::OrderRequest&)>
-        m_example_order_rpc_handler;
     std::function<asio::awaitable<void>(ExampleGetOrderSeqNoRPC&,
                                         fantasy::v1::GetOrderSeqNoRequest&)>
         m_example_get_order_seq_no_rpc_handler;
+    std::function<asio::awaitable<void>(ExampleOrderRPC&,
+                                        fantasy::v1::OrderRequest&)>
+        m_example_order_rpc_handler;
     std::function<asio::awaitable<void>(ExampleServerStreamingRPC&,
                                         fantasy::v1::OrderRequest&)>
         m_example_server_streaming_rpc_handler;
@@ -545,16 +545,16 @@ int main() {
             (void)rpc;
             co_return;
         });
-    m_grpc_server->setExampleOrderRpcCallback(
-        [] (peak::ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request) ->
-asio::awaitable<void> { (void)rpc; (void)request; co_return;
-        });
     m_grpc_server->setExampleGetOrderSeqNoRpcCallback(
         [] (peak::ExampleGetOrderSeqNoRPC& rpc,
 fantasy::v1::GetOrderSeqNoRequest& request) -> asio::awaitable<void> {
             (void)rpc;
             (void)request;
             co_return;
+        });
+    m_grpc_server->setExampleOrderRpcCallback(
+        [] (peak::ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request) ->
+asio::awaitable<void> { (void)rpc; (void)request; co_return;
         });
     m_grpc_server->setExampleServerStreamingRpcCallback(
         [] (peak::ExampleServerStreamingRPC& rpc, fantasy::v1::OrderRequest&
@@ -582,18 +582,18 @@ m_grpc_server->setExampleNoticeRpcCallback(std::bind_front(&Test::notice,
 this));
 
 
-asio::awaitable<void> order(peak::ExampleOrderRPC& rpc,
-fantasy::v1::OrderRequest& request) { (void)rpc; co_return;
-}
-m_grpc_server->setExampleOrderRpcCallback(std::bind_front(&Test::order, this));
-
-
-
 asio::awaitable<void> getOrderSeqNo(peak::ExampleGetOrderSeqNoRPC& rpc,
 fantasy::v1::GetOrderSeqNoRequest& request) { (void)rpc; co_return;
 }
 m_grpc_server->setExampleGetOrderSeqNoRpcCallback(std::bind_front(&Test::getOrderSeqNo,
 this));
+
+
+
+asio::awaitable<void> order(peak::ExampleOrderRPC& rpc,
+fantasy::v1::OrderRequest& request) { (void)rpc; co_return;
+}
+m_grpc_server->setExampleOrderRpcCallback(std::bind_front(&Test::order, this));
 
 
 

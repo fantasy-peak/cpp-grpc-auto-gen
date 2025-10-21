@@ -31,14 +31,6 @@ asio::awaitable<void> procNotice(peak::ExampleNoticeRPC& rpc) {
     co_return;
 }
 
-asio::awaitable<void> procOrder(peak::ExampleOrderRPC& rpc,
-                                fantasy::v1::OrderRequest& request) {
-    (void)rpc;
-    (void)request;
-    spdlog::info("unary-rpc, procOrder ExampleOrder => {}", toJson(request));
-    co_return;
-}
-
 asio::awaitable<void> procGetOrderSeqNo(
     peak::ExampleGetOrderSeqNoRPC& rpc,
     fantasy::v1::GetOrderSeqNoRequest& request) {
@@ -46,6 +38,14 @@ asio::awaitable<void> procGetOrderSeqNo(
     (void)request;
     spdlog::info("unary-rpc, procGetOrderSeqNo ExampleGetOrderSeqNo => {}",
                  toJson(request));
+    co_return;
+}
+
+asio::awaitable<void> procOrder(peak::ExampleOrderRPC& rpc,
+                                fantasy::v1::OrderRequest& request) {
+    (void)rpc;
+    (void)request;
+    spdlog::info("unary-rpc, procOrder ExampleOrder => {}", toJson(request));
     co_return;
 }
 
@@ -101,9 +101,9 @@ int main() {
 
     m_grpc_server->setExampleNoticeRpcCallback(
         std::bind_front(peak::procNotice));
-    m_grpc_server->setExampleOrderRpcCallback(std::bind_front(peak::procOrder));
     m_grpc_server->setExampleGetOrderSeqNoRpcCallback(
         std::bind_front(peak::procGetOrderSeqNo));
+    m_grpc_server->setExampleOrderRpcCallback(std::bind_front(peak::procOrder));
 #if USE_GRPC_NOTIFY_WHEN_DONE
     m_grpc_server->setExampleServerStreamingNotifyWhenDoneRpcCallback(
         std::bind_front(peak::procServerStreaming));

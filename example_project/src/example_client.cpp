@@ -43,20 +43,6 @@ asio::awaitable<void> makeNoticeRequest(agrpc::GrpcContext& grpc_context,
     const grpc::Status status = co_await rpc.finish();
 }
 
-asio::awaitable<void> makeOrderRequest(agrpc::GrpcContext& grpc_context,
-                                       fantasy::v1::Example::Stub& stub) {
-    using RPC =
-        agrpc::ClientRPC<&fantasy::v1::Example::Stub::PrepareAsyncOrder>;
-    grpc::ClientContext client_context;
-    client_context.set_deadline(std::chrono::system_clock::now() +
-                                std::chrono::seconds(5));
-    fantasy::v1::OrderRequest request;
-    fantasy::v1::OrderResponse response;
-    const auto status = co_await RPC::request(
-        grpc_context, stub, client_context, request, response);
-    co_return;
-}
-
 asio::awaitable<void> makeGetOrderSeqNoRequest(
     agrpc::GrpcContext& grpc_context,
     fantasy::v1::Example::Stub& stub) {
@@ -67,6 +53,20 @@ asio::awaitable<void> makeGetOrderSeqNoRequest(
                                 std::chrono::seconds(5));
     fantasy::v1::GetOrderSeqNoRequest request;
     fantasy::v1::GetOrderSeqNoResponse response;
+    const auto status = co_await RPC::request(
+        grpc_context, stub, client_context, request, response);
+    co_return;
+}
+
+asio::awaitable<void> makeOrderRequest(agrpc::GrpcContext& grpc_context,
+                                       fantasy::v1::Example::Stub& stub) {
+    using RPC =
+        agrpc::ClientRPC<&fantasy::v1::Example::Stub::PrepareAsyncOrder>;
+    grpc::ClientContext client_context;
+    client_context.set_deadline(std::chrono::system_clock::now() +
+                                std::chrono::seconds(5));
+    fantasy::v1::OrderRequest request;
+    fantasy::v1::OrderResponse response;
     const auto status = co_await RPC::request(
         grpc_context, stub, client_context, request, response);
     co_return;
@@ -136,10 +136,10 @@ int main(int argc, const char** argv) {
     const auto host = std::string("localhost:") + port;
     const auto thread_count = std::thread::hardware_concurrency();
 
-    peak::ClientServer client{host, thread_count};
+    peak::GrpcClient client{host, thread_count};
     client.notice(peak::makeNoticeRequest);
-    client.order(peak::makeOrderRequest);
     client.getOrderSeqNo(peak::makeGetOrderSeqNoRequest);
+    client.order(peak::makeOrderRequest);
     client.serverStreaming(peak::makeServerStreamingRequest);
     client.clientStreaming(peak::makeClientStreamingRequest);
 

@@ -39,6 +39,13 @@ The main script `cpp-grpc-auto-gen.py` is used to generate the code. The script 
 2.  **Run the generation script.** Execute the script, pointing it to your YAML config, the main template, and the desired output header file. The script will then generate a complete project in the `example_project/` directory.
 
     ```bash
+    python3 proto2yaml.py example/example.proto \
+      --namespace peak \
+      --server_class_name GrpcServer \
+      --client_class_name GrpcClient \
+      --include_grpc_files example.grpc.pb.h example.pb.h \
+      --out ./proto.yaml
+
     python3 cpp-grpc-auto-gen.py \
       --proto proto.yaml \
       --template template/grpc_server.j2 \

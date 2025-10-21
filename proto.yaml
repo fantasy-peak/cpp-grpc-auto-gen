@@ -1,34 +1,32 @@
----
 namespace: peak
 server_class_name: GrpcServer
-client_class_name: ClientServer
-include_grpc_files: [example.grpc.pb.h, example.pb.h]
+client_class_name: GrpcClient
+include_grpc_files:
+- example.grpc.pb.h
+- example.pb.h
 package: fantasy.v1
-proto_files: [example/example.proto, example/health.proto]
-
+proto_files:
+- example/example.proto
+- example/health.proto
 interface:
   Example:
-    - name: Notice
-      input: NoticeRequest
-      output: NoticeResponse
-      type: bidirectional-streaming-rpc
-
-    - name: Order
-      input: OrderRequest
-      output: OrderResponse
-      type: unary-rpc
-
-    - name: GetOrderSeqNo
-      input: GetOrderSeqNoRequest
-      output: GetOrderSeqNoResponse
-      type: unary-rpc
-
-    - name: ServerStreaming
-      input: OrderRequest
-      output: OrderResponse
-      type: server-streaming-rpc
-
-    - name: ClientStreaming
-      input: OrderRequest
-      output: OrderResponse
-      type: client-streaming-rpc
+  - name: Notice
+    input: NoticeRequest
+    output: NoticeResponse
+    type: bidirectional-streaming-rpc
+  - name: GetOrderSeqNo
+    input: GetOrderSeqNoRequest
+    output: GetOrderSeqNoResponse
+    type: unary-rpc
+  - name: Order
+    input: OrderRequest
+    output: OrderResponse
+    type: unary-rpc
+  - name: ServerStreaming
+    input: OrderRequest
+    output: OrderResponse
+    type: server-streaming-rpc
+  - name: ClientStreaming
+    input: OrderRequest
+    output: OrderResponse
+    type: client-streaming-rpc

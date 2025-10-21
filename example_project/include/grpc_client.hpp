@@ -78,9 +78,9 @@ struct GuardedGrpcContext {
         context.get_executor()};
 };
 
-class ClientServer final {
+class GrpcClient final {
   public:
-    ClientServer(const std::string& host, size_t thread_count = 4) {
+    GrpcClient(const std::string& host, size_t thread_count = 4) {
         m_stub = fantasy::v1::Example::NewStub(
             grpc::CreateChannel(std::string(host),
                                 grpc::InsecureChannelCredentials()));
@@ -100,14 +100,14 @@ class ClientServer final {
                 m_grpc_contexts.begin(), thread_count);
     }
 
-    ~ClientServer() {
+    ~GrpcClient() {
         stop();
     }
 
-    ClientServer(const ClientServer&) = delete;
-    ClientServer& operator=(const ClientServer&) = delete;
-    ClientServer(ClientServer&&) = delete;
-    ClientServer& operator=(ClientServer&&) = delete;
+    GrpcClient(const GrpcClient&) = delete;
+    GrpcClient& operator=(const GrpcClient&) = delete;
+    GrpcClient(GrpcClient&&) = delete;
+    GrpcClient& operator=(GrpcClient&&) = delete;
 
     void stop() {
         for (auto& grpc_context : m_grpc_contexts) {
@@ -137,9 +137,10 @@ class ClientServer final {
             asio::detached);
     }
 
-    void order(std::function<asio::awaitable<void>(agrpc::GrpcContext&,
-                                                   fantasy::v1::Example::Stub&)>
-                   handler) {
+    void getOrderSeqNo(
+        std::function<asio::awaitable<void>(agrpc::GrpcContext&,
+                                            fantasy::v1::Example::Stub&)>
+            handler) {
         auto& grpc_context = m_round_robin->next()->context;
         asio::co_spawn(
             grpc_context,
@@ -151,10 +152,9 @@ class ClientServer final {
             asio::detached);
     }
 
-    void getOrderSeqNo(
-        std::function<asio::awaitable<void>(agrpc::GrpcContext&,
-                                            fantasy::v1::Example::Stub&)>
-            handler) {
+    void order(std::function<asio::awaitable<void>(agrpc::GrpcContext&,
+                                                   fantasy::v1::Example::Stub&)>
+                   handler) {
         auto& grpc_context = m_round_robin->next()->context;
         asio::co_spawn(
             grpc_context,
