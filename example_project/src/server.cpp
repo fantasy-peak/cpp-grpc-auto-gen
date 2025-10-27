@@ -93,8 +93,6 @@ int main() {
         .http2_max_pings_without_data = 0,
         .http2_min_sent_ping_interval_without_data_ms = 10000,
         .http2_min_recv_ping_interval_without_data_ms = 5000,
-        .min_pollers = std::nullopt,
-        .max_pollers = std::nullopt,
     };
     auto m_grpc_server = std::make_unique<peak::GrpcServer>(config);
     namespace asio = boost::asio;

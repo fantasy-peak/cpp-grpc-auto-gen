@@ -91,8 +91,6 @@ struct GrpcConfig {
     int32_t http2_max_pings_without_data{0};
     int32_t http2_min_sent_ping_interval_without_data_ms{10000};
     int32_t http2_min_recv_ping_interval_without_data_ms{5000};
-    std::optional<int32_t> min_pollers;
-    std::optional<int32_t> max_pollers;
 };
 
 template <auto RequestRPC>
@@ -190,13 +188,6 @@ class GrpcServer final {
             m_config.http2_min_recv_ping_interval_without_data_ms);
         if (m_add_channel_argument)
             m_add_channel_argument(builder);
-
-        if (m_config.min_pollers.has_value())
-            builder.SetSyncServerOption(grpc::ServerBuilder::MIN_POLLERS,
-                                        m_config.min_pollers.value());
-        if (m_config.max_pollers.has_value())
-            builder.SetSyncServerOption(grpc::ServerBuilder::MAX_POLLERS,
-                                        m_config.max_pollers.value());
 
         agrpc::add_health_check_service(builder);
         m_server_ptr = builder.BuildAndStart();
@@ -533,8 +524,6 @@ int main() {
         .http2_max_pings_without_data = 0,
         .http2_min_sent_ping_interval_without_data_ms = 10000,
         .http2_min_recv_ping_interval_without_data_ms = 5000,
-        .min_pollers = 2,
-        .max_pollers = 4,
     };
     // auto m_grpc_server = peak::GrpcServer::create(m_config);
     auto m_grpc_server = std::make_unique<peak::GrpcServer>(config);
