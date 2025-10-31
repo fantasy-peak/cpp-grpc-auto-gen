@@ -119,6 +119,10 @@ class GrpcClient final {
     GrpcClient(GrpcClient&&) = delete;
     GrpcClient& operator=(GrpcClient&&) = delete;
 
+    static auto create(const std::string& host, size_t thread_count = 4) {
+        return std::make_unique<GrpcClient>(host, thread_count);
+    }
+
     void stop() {
         for (auto& grpc_context : m_grpc_contexts) {
             grpc_context->guard.reset();

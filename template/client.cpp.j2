@@ -13,7 +13,9 @@
 #include <spdlog/spdlog.h>
 #include <{{grpc.out_client_file | get_filename }}>
 
-namespace {{grpc.namespace}} {
+namespace grpc_auto_gen {
+
+namespace asio = boost::asio;
 
 {% for service_name in grpc.interface -%}
 {% for interface in grpc.interface[service_name] -%}
@@ -110,21 +112,21 @@ asio::awaitable<void> make{{interface.name}}Request(agrpc::GrpcContext& grpc_con
 {% endfor -%}
 {% endfor %}
 
-}  // namespace {{grpc.namespace}}
+}  // namespace grpc_auto_gen
 
 int main(int argc, const char** argv)
 {
     const char* port = argc >= 2 ? argv[1] : "5566";
     const auto host = std::string("localhost:") + port;
     const auto thread_count = std::thread::hardware_concurrency();
-
+    using namespace grpc_auto_gen;
     {% for service_name in grpc.interface -%}
-    {{grpc.namespace}}::{{grpc.client_class_name}} client{host, thread_count};
-    client.setLogCallback([](std::string_view file, int line, std::string_view msg) {
+    auto client = {{grpc.namespace}}::{{grpc.client_class_name}}::create(host, thread_count);
+    client->setLogCallback([](std::string_view file, int line, std::string_view msg) {
         spdlog::info("file: {}, line: {}, msg: {}", file, line, msg);
     });
     {% for interface in grpc.interface[service_name] -%}
-        client.{{interface.name | to_lower_camel}}({{grpc.namespace}}::make{{interface.name}}Request);
+        client->{{interface.name | to_lower_camel}}(make{{interface.name}}Request);
     {% endfor %}
 
     {% endfor -%}

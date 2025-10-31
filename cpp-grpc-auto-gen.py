@@ -49,7 +49,7 @@ if __name__ == "__main__":
         formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument('--proto', type=str, default='proto.yaml', help='Path to the proto config file (e.g., proto.yaml)')
-    parser.add_argument('--template', type=str, default='template/grpc_server.j2', help='Path to the main Jinja2 template file')
+    parser.add_argument('--template', type=str, default='./template', help='Path to the main Jinja2 template file')
     parser.add_argument('--format', type=str, default='clang-format', help='Code formatter command (e.g., clang-format). Use "none" to disable.')
     parser.add_argument('--out_server_file', type=str, required=True, help='Output path for the main generated header file')
     parser.add_argument('--out_client_file', type=str, required=True, help='Output path for the main generated header file')
@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
     # --- Setup ---
     config = load_yaml(args.proto)
-    template_dir = os.path.dirname(args.template)
+    template_dir = args.template
     loader = FileSystemLoader(searchpath=template_dir if template_dir else "./")
     jenv = Environment(loader=loader, extensions=['jinja2_strcase.StrcaseExtension'])
     jenv.filters['get_filename'] = get_filename

@@ -121,6 +121,10 @@ public:
     {{grpc.client_class_name}}({{grpc.client_class_name}}&&) = delete;
     {{grpc.client_class_name}}& operator=({{grpc.client_class_name}}&&) = delete;
 
+    static auto create(const std::string& host, size_t thread_count = 4) {
+        return std::make_unique<{{grpc.client_class_name}}>(host, thread_count);
+    }
+
     void stop() {
         for (auto& grpc_context : m_grpc_contexts)
         {

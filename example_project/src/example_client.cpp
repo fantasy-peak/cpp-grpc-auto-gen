@@ -13,7 +13,9 @@
 #include <spdlog/spdlog.h>
 #include <grpc_client.hpp>
 
-namespace peak {
+namespace grpc_auto_gen {
+
+namespace asio = boost::asio;
 
 asio::awaitable<void> makeNoticeRequest(agrpc::GrpcContext& grpc_context,
                                         fantasy::v1::Example::Stub& stub) {
@@ -130,23 +132,23 @@ asio::awaitable<void> makeClientStreamingRequest(
     co_return;
 }
 
-}  // namespace peak
+}  // namespace grpc_auto_gen
 
 int main(int argc, const char** argv) {
     const char* port = argc >= 2 ? argv[1] : "5566";
     const auto host = std::string("localhost:") + port;
     const auto thread_count = std::thread::hardware_concurrency();
-
-    peak::GrpcClient client{host, thread_count};
-    client.setLogCallback(
+    using namespace grpc_auto_gen;
+    auto client = peak::GrpcClient::create(host, thread_count);
+    client->setLogCallback(
         [](std::string_view file, int line, std::string_view msg) {
             spdlog::info("file: {}, line: {}, msg: {}", file, line, msg);
         });
-    client.notice(peak::makeNoticeRequest);
-    client.getOrderSeqNo(peak::makeGetOrderSeqNoRequest);
-    client.order(peak::makeOrderRequest);
-    client.serverStreaming(peak::makeServerStreamingRequest);
-    client.clientStreaming(peak::makeClientStreamingRequest);
+    client->notice(makeNoticeRequest);
+    client->getOrderSeqNo(makeGetOrderSeqNoRequest);
+    client->order(makeOrderRequest);
+    client->serverStreaming(makeServerStreamingRequest);
+    client->clientStreaming(makeClientStreamingRequest);
 
     return 0;
 }

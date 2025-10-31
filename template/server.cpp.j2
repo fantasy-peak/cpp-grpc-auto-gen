@@ -12,7 +12,9 @@
 
 #include <{{grpc.out_server_file | get_filename }}>
 
-namespace {{grpc.namespace}} {
+namespace grpc_auto_gen {
+
+namespace asio = boost::asio;
 
 std::string toJson(auto& request) {
     google::protobuf::util::JsonPrintOptions options;
@@ -23,10 +25,31 @@ std::string toJson(auto& request) {
     return json_output;
 }
 
+struct Handler {
+    {% for service_name in grpc.interface %}
+    {% for interface in grpc.interface[service_name] %}
+    {% if interface.type=='bidirectional-streaming-rpc'-%}
+        asio::awaitable<void> proc{{interface.name}}({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc);
+    {%- elif interface.type=='client-streaming-rpc' -%}
+        asio::awaitable<void> proc{{interface.name}}({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc);
+    {%- elif interface.type=='server-streaming-rpc' -%}
+    #if USE_GRPC_NOTIFY_WHEN_DONE
+        asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}NotifyWhenDoneRPC& rpc,
+                    {{grpc.namespace}}::{{service_name}}{{interface.name}}NotifyWhenDoneRPC::Request& request);
+    #else
+        asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request);
+    #endif
+    {%- else -%}
+        asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request);
+    {%- endif -%}
+    {% endfor %}
+    {% endfor %}
+};
+
 {% for service_name in grpc.interface -%}
 {% for interface in grpc.interface[service_name] -%}
 {% if interface.type=='bidirectional-streaming-rpc'-%}
-asio::awaitable<void> proc{{interface.name}}({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc)  {
+asio::awaitable<void> Handler::proc{{interface.name}}({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc)  {
     spdlog::info("{{interface.type}} => {}", "{{service_name}}{{interface.name}}");
     {{grpc.package}}::{{interface.input}} request;
     co_await rpc.read(request);
@@ -36,7 +59,7 @@ asio::awaitable<void> proc{{interface.name}}({{grpc.namespace}}::{{service_name}
     co_return;
 }
 {% elif interface.type=='client-streaming-rpc' %}
-asio::awaitable<void> proc{{interface.name}}({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc)  {
+asio::awaitable<void> Handler::proc{{interface.name}}({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc)  {
     spdlog::info("{{interface.type}} => {}", "{{service_name}}{{interface.name}}");
     // Optionally send initial metadata first.
     if (!co_await rpc.send_initial_metadata())
@@ -59,7 +82,7 @@ asio::awaitable<void> proc{{interface.name}}({{grpc.namespace}}::{{service_name}
 }
 {% elif interface.type=='server-streaming-rpc' %}
 #if USE_GRPC_NOTIFY_WHEN_DONE
-asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}NotifyWhenDoneRPC& rpc,
+asio::awaitable<void> Handler::proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}NotifyWhenDoneRPC& rpc,
                 {{grpc.namespace}}::{{service_name}}{{interface.name}}NotifyWhenDoneRPC::Request& request) {
     spdlog::info("USE_GRPC_NOTIFY_WHEN_DONE {{interface.type}}, proc{{interface.name}} {{service_name}}{{interface.name}} => {}", toJson(request));
     {{grpc.namespace}}::{{service_name}}{{interface.name}}NotifyWhenDoneRPC::Response response;
@@ -93,7 +116,7 @@ asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name
     co_return;
 }
 #else
-asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) {
+asio::awaitable<void> Handler::proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) {
     spdlog::info("{{interface.type}}, proc{{interface.name}} {{service_name}}{{interface.name}} => {}", toJson(request));
     {{grpc.package}}::{{interface.output}} response;
     auto ret = co_await rpc.write(response);
@@ -103,7 +126,7 @@ asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name
 #endif
 
 {% else -%}
-asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) {
+asio::awaitable<void> Handler::proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) {
     spdlog::info("{{interface.type}}, proc{{interface.name}} {{service_name}}{{interface.name}} => {}", toJson(request));
     {{grpc.package}}::{{interface.output}} response;
     co_await rpc.finish(response, grpc::Status::OK);
@@ -135,18 +158,20 @@ int main() {
         spdlog::info("level: {}, file: {}, line: {}, msg: {}", 
             level == {{grpc.namespace}}::LogLevel::Info ? "info" : "error", file, line, msg);
     });
+    using namespace grpc_auto_gen;
+    Handler handler;
     {% for service_name in grpc.interface -%}
     {% for interface in grpc.interface[service_name] -%}
     {% if interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' -%}
-    grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
+    grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front(&Handler::proc{{interface.name}}, handler));
     {% elif interface.type=='server-streaming-rpc' -%}
     #if USE_GRPC_NOTIFY_WHEN_DONE
-        grpc_server->set{{service_name}}{{interface.name}}NotifyWhenDoneRpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
+        grpc_server->set{{service_name}}{{interface.name}}NotifyWhenDoneRpcCallback(std::bind_front(&Handler::proc{{interface.name}}, handler));
     #else
-        grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
+        grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front(&Handler::proc{{interface.name}}, handler));
     #endif
     {% else -%}
-    grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
+    grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front(&Handler::proc{{interface.name}}, handler));
     {% endif -%}
     {% endfor -%}
     {% endfor -%}
