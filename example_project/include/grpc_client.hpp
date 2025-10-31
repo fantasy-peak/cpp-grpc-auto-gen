@@ -46,6 +46,16 @@
 #include <health.grpc.pb.h>
 #include <health.pb.h>
 
+namespace peak_utils {
+consteval std::string_view extractFilename(const char* path) {
+    std::string_view path_view{path};
+    std::size_t last_slash = path_view.find_last_of("/\\");
+    return (last_slash == std::string_view::npos)
+               ? path_view
+               : path_view.substr(last_slash + 1);
+}
+}  // namespace peak_utils
+
 namespace peak {
 
 #ifdef AGRPC_BOOST_ASIO
@@ -122,6 +132,10 @@ class GrpcClient final {
         m_threads.clear();
     }
 
+    void setLogCallback(auto cb) {
+        m_log = std::move(cb);
+    }
+
     void notice(
         std::function<asio::awaitable<void>(agrpc::GrpcContext&,
                                             fantasy::v1::Example::Stub&)>
@@ -129,11 +143,16 @@ class GrpcClient final {
         auto& grpc_context = m_round_robin->next()->context;
         asio::co_spawn(
             grpc_context,
-            [](auto& grpc_context,
-               auto& stub,
-               auto handler) -> asio::awaitable<void> {
-                co_await handler(grpc_context, stub);
-            }(grpc_context, *m_stub, std::move(handler)),
+            [](auto& grpc_context, auto& stub, auto handler, auto self)
+                -> asio::awaitable<void> {
+                try {
+                    co_await handler(grpc_context, stub);
+                } catch (const std::exception& e) {
+                    self->m_log(peak_utils::extractFilename(__FILE__),
+                                __LINE__,
+                                e.what());
+                }
+            }(grpc_context, *m_stub, std::move(handler), this),
             asio::detached);
     }
 
@@ -144,11 +163,16 @@ class GrpcClient final {
         auto& grpc_context = m_round_robin->next()->context;
         asio::co_spawn(
             grpc_context,
-            [](auto& grpc_context,
-               auto& stub,
-               auto handler) -> asio::awaitable<void> {
-                co_await handler(grpc_context, stub);
-            }(grpc_context, *m_stub, std::move(handler)),
+            [](auto& grpc_context, auto& stub, auto handler, auto self)
+                -> asio::awaitable<void> {
+                try {
+                    co_await handler(grpc_context, stub);
+                } catch (const std::exception& e) {
+                    self->m_log(peak_utils::extractFilename(__FILE__),
+                                __LINE__,
+                                e.what());
+                }
+            }(grpc_context, *m_stub, std::move(handler), this),
             asio::detached);
     }
 
@@ -158,11 +182,16 @@ class GrpcClient final {
         auto& grpc_context = m_round_robin->next()->context;
         asio::co_spawn(
             grpc_context,
-            [](auto& grpc_context,
-               auto& stub,
-               auto handler) -> asio::awaitable<void> {
-                co_await handler(grpc_context, stub);
-            }(grpc_context, *m_stub, std::move(handler)),
+            [](auto& grpc_context, auto& stub, auto handler, auto self)
+                -> asio::awaitable<void> {
+                try {
+                    co_await handler(grpc_context, stub);
+                } catch (const std::exception& e) {
+                    self->m_log(peak_utils::extractFilename(__FILE__),
+                                __LINE__,
+                                e.what());
+                }
+            }(grpc_context, *m_stub, std::move(handler), this),
             asio::detached);
     }
 
@@ -173,11 +202,16 @@ class GrpcClient final {
         auto& grpc_context = m_round_robin->next()->context;
         asio::co_spawn(
             grpc_context,
-            [](auto& grpc_context,
-               auto& stub,
-               auto handler) -> asio::awaitable<void> {
-                co_await handler(grpc_context, stub);
-            }(grpc_context, *m_stub, std::move(handler)),
+            [](auto& grpc_context, auto& stub, auto handler, auto self)
+                -> asio::awaitable<void> {
+                try {
+                    co_await handler(grpc_context, stub);
+                } catch (const std::exception& e) {
+                    self->m_log(peak_utils::extractFilename(__FILE__),
+                                __LINE__,
+                                e.what());
+                }
+            }(grpc_context, *m_stub, std::move(handler), this),
             asio::detached);
     }
 
@@ -188,11 +222,16 @@ class GrpcClient final {
         auto& grpc_context = m_round_robin->next()->context;
         asio::co_spawn(
             grpc_context,
-            [](auto& grpc_context,
-               auto& stub,
-               auto handler) -> asio::awaitable<void> {
-                co_await handler(grpc_context, stub);
-            }(grpc_context, *m_stub, std::move(handler)),
+            [](auto& grpc_context, auto& stub, auto handler, auto self)
+                -> asio::awaitable<void> {
+                try {
+                    co_await handler(grpc_context, stub);
+                } catch (const std::exception& e) {
+                    self->m_log(peak_utils::extractFilename(__FILE__),
+                                __LINE__,
+                                e.what());
+                }
+            }(grpc_context, *m_stub, std::move(handler), this),
             asio::detached);
     }
 
@@ -202,5 +241,7 @@ class GrpcClient final {
     std::vector<std::thread> m_threads;
     std::unique_ptr<RoundRobin<decltype(m_grpc_contexts.begin())>>
         m_round_robin;
+    std::function<void(std::string_view, int, std::string)> m_log =
+        [](auto, auto, auto) {};
 };
 }  // namespace peak

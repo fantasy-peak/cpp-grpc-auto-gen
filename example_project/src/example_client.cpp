@@ -10,6 +10,7 @@
 
 #include <thread>
 
+#include <spdlog/spdlog.h>
 #include <grpc_client.hpp>
 
 namespace peak {
@@ -91,7 +92,7 @@ asio::awaitable<void> makeServerStreamingRequest(
     fantasy::v1::OrderResponse response;
 
     while (co_await rpc.read(response)) {
-        std::cout << "ClientRPC: Recv Server streaming " << "\n";
+        spdlog::info("ClientRPC: Recv Server streaming ");
     }
 
     const grpc::Status status = co_await rpc.finish();
@@ -124,7 +125,7 @@ asio::awaitable<void> makeClientStreamingRequest(
     const grpc::Status status = co_await rpc.finish();
     auto ok = status.ok();
 
-    std::cout << "ClientRPC: Client streaming completed. Response " << '\n';
+    spdlog::info("ClientRPC: Client streaming completed. Response");
 
     co_return;
 }
@@ -137,6 +138,10 @@ int main(int argc, const char** argv) {
     const auto thread_count = std::thread::hardware_concurrency();
 
     peak::GrpcClient client{host, thread_count};
+    client.setLogCallback(
+        [](std::string_view file, int line, std::string_view msg) {
+            spdlog::info("file: {}, line: {}, msg: {}", file, line, msg);
+        });
     client.notice(peak::makeNoticeRequest);
     client.getOrderSeqNo(peak::makeGetOrderSeqNoRequest);
     client.order(peak::makeOrderRequest);

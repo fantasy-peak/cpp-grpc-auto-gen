@@ -47,6 +47,16 @@
 #include <health.grpc.pb.h>
 #include <health.pb.h>
 
+namespace {{grpc.namespace}}_utils {
+consteval std::string_view extractFilename(const char* path) {
+    std::string_view path_view{path};
+    std::size_t last_slash = path_view.find_last_of("/\\");
+    return (last_slash == std::string_view::npos)
+            ? path_view
+            : path_view.substr(last_slash + 1);
+}
+} // namespace {{grpc.namespace}}_utils
+
 namespace {{grpc.namespace}} {
 
 #ifdef AGRPC_BOOST_ASIO
@@ -127,14 +137,24 @@ public:
         m_threads.clear();
     }
 
+    void setLogCallback(auto cb) {
+        m_log = std::move(cb);
+    }
+
     {% for interface in grpc.interface[service_name] -%}
     void {{interface.name | to_lower_camel}}(std::function<asio::awaitable<void>(agrpc::GrpcContext& ,
                                        {{grpc.package}}::{{service_name}}::Stub&)> handler)
     {
         auto& grpc_context = m_round_robin->next()->context;
-        asio::co_spawn(grpc_context, [](auto&grpc_context, auto& stub,  auto handler) -> asio::awaitable<void> {
-            co_await handler(grpc_context, stub);
-        }(grpc_context, *m_stub, std::move(handler)), asio::detached);
+        asio::co_spawn(grpc_context, [](auto&grpc_context, auto& stub, auto handler, auto self) -> asio::awaitable<void> {
+            try {
+                co_await handler(grpc_context, stub);
+            } catch (const std::exception& e) {
+                self->m_log({{grpc.namespace}}_utils::extractFilename(__FILE__),
+                        __LINE__,
+                        e.what());
+            }
+        }(grpc_context, *m_stub, std::move(handler), this), asio::detached);
     }
     {% endfor -%}
 
@@ -143,6 +163,7 @@ private:
     std::vector<std::unique_ptr<GuardedGrpcContext>> m_grpc_contexts;
     std::vector<std::thread> m_threads;
     std::unique_ptr<RoundRobin<decltype(m_grpc_contexts.begin())>> m_round_robin;
+    std::function<void(std::string_view, int, std::string)> m_log = [](auto, auto, auto) {};
 };
 {% endfor -%}
 

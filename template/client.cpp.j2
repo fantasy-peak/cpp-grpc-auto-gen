@@ -10,6 +10,7 @@
 
 #include <thread>
 
+#include <spdlog/spdlog.h>
 #include <{{grpc.out_client_file | get_filename }}>
 
 namespace {{grpc.namespace}} {
@@ -32,7 +33,7 @@ asio::awaitable<void> make{{interface.name}}Request(agrpc::GrpcContext& grpc_con
 
     while (co_await rpc.read(response))
     {
-        std::cout << "ClientRPC: Recv Server streaming "  << "\n";
+        spdlog::info("ClientRPC: Recv Server streaming ");
     }
 
     const grpc::Status status = co_await rpc.finish();
@@ -61,7 +62,7 @@ asio::awaitable<void> make{{interface.name}}Request(agrpc::GrpcContext& grpc_con
         const grpc::Status status = co_await rpc.finish();
         auto ok = status.ok();
 
-        std::cout << "ClientRPC: Client streaming completed. Response " << '\n';
+        spdlog::info("ClientRPC: Client streaming completed. Response");
 
     co_return;
 }
@@ -119,6 +120,9 @@ int main(int argc, const char** argv)
 
     {% for service_name in grpc.interface -%}
     {{grpc.namespace}}::{{grpc.client_class_name}} client{host, thread_count};
+    client.setLogCallback([](std::string_view file, int line, std::string_view msg) {
+        spdlog::info("file: {}, line: {}, msg: {}", file, line, msg);
+    });
     {% for interface in grpc.interface[service_name] -%}
         client.{{interface.name | to_lower_camel}}({{grpc.namespace}}::make{{interface.name}}Request);
     {% endfor %}
