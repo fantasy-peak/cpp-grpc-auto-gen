@@ -82,7 +82,7 @@ struct RethrowFirstArg {
     void operator()(T&&...) {}
 };
 
-struct GrpcServerConfig {
+struct {{grpc.server_class_name}}Config {
     std::string host;
     int32_t thread_count{2};
     int32_t keepalive_time_ms{10000};
@@ -137,7 +137,7 @@ using {{service_name}}{{interface.name}}NotifyWhenDoneRPC = NotifyWhenDoneServer
 
 class {{grpc.server_class_name}} final {
 public:
-    {{grpc.server_class_name}}(GrpcServerConfig config)
+    {{grpc.server_class_name}}({{grpc.server_class_name}}Config config)
         : m_config(std::move(config)) {
     }
     ~{{grpc.server_class_name}}() = default;
@@ -147,7 +147,7 @@ public:
     {{grpc.server_class_name}}({{grpc.server_class_name}}&&) = delete;
     {{grpc.server_class_name}}& operator=({{grpc.server_class_name}}&&) = delete;
 
-    static auto create(GrpcServerConfig config) {
+    static auto create({{grpc.server_class_name}}Config config) {
         return std::make_unique<{{grpc.server_class_name}}>(std::move(config));
     }
 
@@ -352,7 +352,7 @@ private:
 #endif
     }
 
-    GrpcServerConfig m_config;
+    {{grpc.server_class_name}}Config m_config;
     std::function<void(LogLevel, std::string_view, int, std::string)> m_log = [](auto, auto, auto, auto) {};
     std::function<void(grpc::ServerBuilder&)> m_add_channel_argument;
 
@@ -403,7 +403,7 @@ private:
 #include <{{grpc.out_server_file | get_filename }}>
 
 int main() {
-    {{grpc.namespace}}::GrpcServerConfig config{
+    {{grpc.namespace}}::{{grpc.server_class_name}}Config config{
         .host = "0.0.0.0:5566",
         .thread_count = 1,
         .keepalive_time_ms = 10000,

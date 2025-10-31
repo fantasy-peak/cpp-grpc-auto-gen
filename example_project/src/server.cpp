@@ -26,58 +26,104 @@ std::string toJson(auto& request) {
 }
 
 asio::awaitable<void> procNotice(peak::ExampleNoticeRPC& rpc) {
-    (void)rpc;
     spdlog::info("bidirectional-streaming-rpc => {}", "ExampleNotice");
+    fantasy::v1::NoticeRequest request;
+    co_await rpc.read(request);
+    fantasy::v1::NoticeResponse response;
+    co_await rpc.write(response);
+    co_await rpc.finish(grpc::Status::OK);
     co_return;
 }
 
 asio::awaitable<void> procGetOrderSeqNo(
     peak::ExampleGetOrderSeqNoRPC& rpc,
     fantasy::v1::GetOrderSeqNoRequest& request) {
-    (void)rpc;
-    (void)request;
     spdlog::info("unary-rpc, procGetOrderSeqNo ExampleGetOrderSeqNo => {}",
                  toJson(request));
+    fantasy::v1::GetOrderSeqNoResponse response;
+    co_await rpc.finish(response, grpc::Status::OK);
     co_return;
 }
 
 asio::awaitable<void> procOrder(peak::ExampleOrderRPC& rpc,
                                 fantasy::v1::OrderRequest& request) {
-    (void)rpc;
-    (void)request;
     spdlog::info("unary-rpc, procOrder ExampleOrder => {}", toJson(request));
+    fantasy::v1::OrderResponse response;
+    co_await rpc.finish(response, grpc::Status::OK);
     co_return;
 }
 
 #if USE_GRPC_NOTIFY_WHEN_DONE
 asio::awaitable<void> procServerStreaming(
-    ExampleServerStreamingNotifyWhenDoneRPC& rpc,
-    ExampleServerStreamingNotifyWhenDoneRPC::Request& request) {
-    (void)rpc;
-    (void)request;
+    peak::ExampleServerStreamingNotifyWhenDoneRPC& rpc,
+    peak::ExampleServerStreamingNotifyWhenDoneRPC::Request& request) {
     spdlog::info(
         "USE_GRPC_NOTIFY_WHEN_DONE server-streaming-rpc, procServerStreaming "
         "ExampleServerStreaming => {}",
         toJson(request));
+    peak::ExampleServerStreamingNotifyWhenDoneRPC::Response response;
+    if (!co_await rpc.write(response)) {
+        co_return;
+    }
+    agrpc::Alarm alarm(rpc.get_executor());
+    while (true) {
+        const auto [completion_order, wait_ok, ec] =
+            co_await asio::experimental::make_parallel_group(
+                alarm.wait(std::chrono::system_clock::now() +
+                               std::chrono::seconds(30),
+                           asio::deferred),
+                rpc.wait_for_done(asio::deferred))
+                .async_wait(asio::experimental::wait_for_one(),
+                            asio::use_awaitable);
+        if (completion_order[0] == 0) {
+            // alarm completed, send the next message to the client:
+            if (!co_await rpc.write(response)) {
+                co_return;
+            }
+        } else {
+            // wait_for_done completed, IsCancelled can now be called:
+            spdlog::info(
+                "ServerRPC: Server streaming notify_when_done was successfully "
+                "cancelled: {}",
+                rpc.context().IsCancelled());
+            co_return;
+        }
+    }
     co_return;
 }
 #else
 asio::awaitable<void> procServerStreaming(peak::ExampleServerStreamingRPC& rpc,
                                           fantasy::v1::OrderRequest& request) {
-    (void)rpc;
-    (void)request;
     spdlog::info(
         "server-streaming-rpc, procServerStreaming ExampleServerStreaming => "
         "{}",
         toJson(request));
+    fantasy::v1::OrderResponse response;
+    auto ret = co_await rpc.write(response);
+    co_await rpc.finish(grpc::Status::OK);
     co_return;
 }
 #endif
 
 asio::awaitable<void> procClientStreaming(
     peak::ExampleClientStreamingRPC& rpc) {
-    (void)rpc;
     spdlog::info("client-streaming-rpc => {}", "ExampleClientStreaming");
+    // Optionally send initial metadata first.
+    if (!co_await rpc.send_initial_metadata()) {
+        // Connection lost
+        co_return;
+    }
+
+    bool read_ok;
+    do {
+        fantasy::v1::OrderRequest request;
+        // Read from the client stream until the client has signaled
+        // `writes_done`.
+        read_ok = co_await rpc.read(request);
+    } while (read_ok);
+
+    fantasy::v1::OrderResponse response;
+    co_await rpc.finish(response, grpc::Status::OK);
     co_return;
 }
 
@@ -95,32 +141,33 @@ int main() {
         .http2_min_recv_ping_interval_without_data_ms = 5000,
         .enable_grpc_health_check = true,
     };
-    auto m_grpc_server = std::make_unique<peak::GrpcServer>(config);
-    m_grpc_server->setLogCallback(
-        [](auto level, auto file, auto line, auto msg) {
-            spdlog::info("level: {}, file: {}, line: {}, msg: {}",
-                         level == peak::LogLevel::Info ? "info" : "error",
-                         file,
-                         line,
-                         msg);
-        });
-    m_grpc_server->setExampleNoticeRpcCallback(
-        std::bind_front(peak::procNotice));
-    m_grpc_server->setExampleGetOrderSeqNoRpcCallback(
+    auto grpc_server = peak::GrpcServer::create(config);
+    grpc_server->setAddChannelArgumentCallback([](grpc::ServerBuilder&) {
+        spdlog::info("setAddChannelArgumentCallback");
+    });
+    grpc_server->setLogCallback([](auto level, auto file, auto line, auto msg) {
+        spdlog::info("level: {}, file: {}, line: {}, msg: {}",
+                     level == peak::LogLevel::Info ? "info" : "error",
+                     file,
+                     line,
+                     msg);
+    });
+    grpc_server->setExampleNoticeRpcCallback(std::bind_front(peak::procNotice));
+    grpc_server->setExampleGetOrderSeqNoRpcCallback(
         std::bind_front(peak::procGetOrderSeqNo));
-    m_grpc_server->setExampleOrderRpcCallback(std::bind_front(peak::procOrder));
+    grpc_server->setExampleOrderRpcCallback(std::bind_front(peak::procOrder));
 #if USE_GRPC_NOTIFY_WHEN_DONE
-    m_grpc_server->setExampleServerStreamingNotifyWhenDoneRpcCallback(
+    grpc_server->setExampleServerStreamingNotifyWhenDoneRpcCallback(
         std::bind_front(peak::procServerStreaming));
 #else
-    m_grpc_server->setExampleServerStreamingRpcCallback(
+    grpc_server->setExampleServerStreamingRpcCallback(
         std::bind_front(peak::procServerStreaming));
 #endif
-    m_grpc_server->setExampleClientStreamingRpcCallback(
+    grpc_server->setExampleClientStreamingRpcCallback(
         std::bind_front(peak::procClientStreaming));
-    m_grpc_server->start();
+    grpc_server->start();
     std::this_thread::sleep_for(std::chrono::seconds(5000));
-    m_grpc_server->stop();
+    grpc_server->stop();
 
     return 0;
 }

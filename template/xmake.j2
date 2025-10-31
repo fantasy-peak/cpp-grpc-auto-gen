@@ -3,7 +3,7 @@ set_project("grpc_example_project")
 set_version("1.0.0", {build = "%Y%m%d%H%M"})
 set_xmakever("2.9.8")
 
-add_defines("AGRPC_BOOST_ASIO", "ASIO_GRPC_DISABLE_AUTOLINK")
+add_defines("AGRPC_BOOST_ASIO", "ASIO_GRPC_DISABLE_AUTOLINK", "USE_GRPC_NOTIFY_WHEN_DONE")
 
 add_repositories("my_private_repo https://github.com/fantasy-peak/xmake-repo.git")
 

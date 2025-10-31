@@ -25,35 +25,88 @@ std::string toJson(auto& request) {
 
 {% for service_name in grpc.interface -%}
 {% for interface in grpc.interface[service_name] -%}
-{% if interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' -%}
+{% if interface.type=='bidirectional-streaming-rpc'-%}
 asio::awaitable<void> proc{{interface.name}}({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc)  {
-    (void)rpc;
     spdlog::info("{{interface.type}} => {}", "{{service_name}}{{interface.name}}");
+    {{grpc.package}}::{{interface.input}} request;
+    co_await rpc.read(request);
+    {{grpc.package}}::{{interface.output}} response;
+    co_await rpc.write(response);
+    co_await rpc.finish(grpc::Status::OK);
+    co_return;
+}
+{% elif interface.type=='client-streaming-rpc' %}
+asio::awaitable<void> proc{{interface.name}}({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc)  {
+    spdlog::info("{{interface.type}} => {}", "{{service_name}}{{interface.name}}");
+    // Optionally send initial metadata first.
+    if (!co_await rpc.send_initial_metadata())
+    {
+        // Connection lost
+        co_return;
+    }
+
+    bool read_ok;
+    do
+    {
+        {{grpc.package}}::{{interface.input}} request;
+        // Read from the client stream until the client has signaled `writes_done`.
+        read_ok = co_await rpc.read(request);
+    } while (read_ok);
+
+    {{grpc.package}}::{{interface.output}} response;
+    co_await rpc.finish(response, grpc::Status::OK);
     co_return;
 }
 {% elif interface.type=='server-streaming-rpc' %}
 #if USE_GRPC_NOTIFY_WHEN_DONE
-asio::awaitable<void> proc{{interface.name}} ({{service_name}}{{interface.name}}NotifyWhenDoneRPC& rpc,
-                {{service_name}}{{interface.name}}NotifyWhenDoneRPC::Request& request) {
-    (void)rpc;
-    (void)request;
+asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}NotifyWhenDoneRPC& rpc,
+                {{grpc.namespace}}::{{service_name}}{{interface.name}}NotifyWhenDoneRPC::Request& request) {
     spdlog::info("USE_GRPC_NOTIFY_WHEN_DONE {{interface.type}}, proc{{interface.name}} {{service_name}}{{interface.name}} => {}", toJson(request));
+    {{grpc.namespace}}::{{service_name}}{{interface.name}}NotifyWhenDoneRPC::Response response;
+    if (!co_await rpc.write(response))
+    {
+        co_return;
+    }
+    agrpc::Alarm alarm(rpc.get_executor());
+    while (true)
+    {
+        const auto [completion_order, wait_ok, ec] =
+            co_await asio::experimental::make_parallel_group(
+                alarm.wait(std::chrono::system_clock::now() + std::chrono::seconds(30), asio::deferred),
+                rpc.wait_for_done(asio::deferred))
+                .async_wait(asio::experimental::wait_for_one(), asio::use_awaitable);
+        if (completion_order[0] == 0)
+        {
+            // alarm completed, send the next message to the client:
+            if (!co_await rpc.write(response))
+            {
+                co_return;
+            }
+        }
+        else
+        {
+            // wait_for_done completed, IsCancelled can now be called:
+            spdlog::info("ServerRPC: Server streaming notify_when_done was successfully cancelled: {}", rpc.context().IsCancelled());
+            co_return;
+        }
+    }
     co_return;
 }
 #else
 asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) {
-    (void)rpc;
-    (void)request;
     spdlog::info("{{interface.type}}, proc{{interface.name}} {{service_name}}{{interface.name}} => {}", toJson(request));
+    {{grpc.package}}::{{interface.output}} response;
+    auto ret = co_await rpc.write(response);
+    co_await rpc.finish(grpc::Status::OK);
     co_return;
 }
 #endif
 
 {% else -%}
 asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) {
-    (void)rpc;
-    (void)request;
     spdlog::info("{{interface.type}}, proc{{interface.name}} {{service_name}}{{interface.name}} => {}", toJson(request));
+    {{grpc.package}}::{{interface.output}} response;
+    co_await rpc.finish(response, grpc::Status::OK);
     co_return;
 }
 {% endif -%}
@@ -63,7 +116,7 @@ asio::awaitable<void> proc{{interface.name}} ({{grpc.namespace}}::{{service_name
 }
 
 int main() {
-    {{grpc.namespace}}::GrpcServerConfig config{
+    {{grpc.namespace}}::{{grpc.server_class_name}}Config config{
         .host = "0.0.0.0:5566",
         .thread_count = 4,
         .keepalive_time_ms = 10000,
@@ -74,30 +127,33 @@ int main() {
         .http2_min_recv_ping_interval_without_data_ms = 5000,
         .enable_grpc_health_check = true,
     };
-    auto m_grpc_server = std::make_unique<{{grpc.namespace}}::{{grpc.server_class_name}}>(config);
-    m_grpc_server->setLogCallback([](auto level, auto file, auto line, auto msg) {
+    auto grpc_server = {{grpc.namespace}}::{{grpc.server_class_name}}::create(config);
+    grpc_server->setAddChannelArgumentCallback([](grpc::ServerBuilder&) {
+        spdlog::info("setAddChannelArgumentCallback");
+    });
+    grpc_server->setLogCallback([](auto level, auto file, auto line, auto msg) {
         spdlog::info("level: {}, file: {}, line: {}, msg: {}", 
             level == {{grpc.namespace}}::LogLevel::Info ? "info" : "error", file, line, msg);
     });
     {% for service_name in grpc.interface -%}
     {% for interface in grpc.interface[service_name] -%}
     {% if interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' -%}
-    m_grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
+    grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
     {% elif interface.type=='server-streaming-rpc' -%}
     #if USE_GRPC_NOTIFY_WHEN_DONE
-        m_grpc_server->set{{service_name}}{{interface.name}}NotifyWhenDoneRpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
+        grpc_server->set{{service_name}}{{interface.name}}NotifyWhenDoneRpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
     #else
-        m_grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
+        grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
     #endif
     {% else -%}
-    m_grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
+    grpc_server->set{{service_name}}{{interface.name}}RpcCallback(std::bind_front({{grpc.namespace}}::proc{{interface.name}}));
     {% endif -%}
     {% endfor -%}
     {% endfor -%}
 
-    m_grpc_server->start();
+    grpc_server->start();
     std::this_thread::sleep_for(std::chrono::seconds(5000));
-    m_grpc_server->stop();
+    grpc_server->stop();
 
     return 0;
 }
