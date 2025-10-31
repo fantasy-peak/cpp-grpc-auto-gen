@@ -84,7 +84,7 @@ asio::awaitable<void> procClientStreaming(
 }  // namespace peak
 
 int main() {
-    peak::GrpcConfig config{
+    peak::GrpcServerConfig config{
         .host = "0.0.0.0:5566",
         .thread_count = 4,
         .keepalive_time_ms = 10000,
@@ -93,10 +93,17 @@ int main() {
         .http2_max_pings_without_data = 0,
         .http2_min_sent_ping_interval_without_data_ms = 10000,
         .http2_min_recv_ping_interval_without_data_ms = 5000,
+        .enable_grpc_health_check = true,
     };
     auto m_grpc_server = std::make_unique<peak::GrpcServer>(config);
-    namespace asio = boost::asio;
-
+    m_grpc_server->setLogCallback(
+        [](auto level, auto file, auto line, auto msg) {
+            spdlog::info("level: {}, file: {}, line: {}, msg: {}",
+                         level == peak::LogLevel::Info ? "info" : "error",
+                         file,
+                         line,
+                         msg);
+        });
     m_grpc_server->setExampleNoticeRpcCallback(
         std::bind_front(peak::procNotice));
     m_grpc_server->setExampleGetOrderSeqNoRpcCallback(

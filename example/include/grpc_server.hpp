@@ -82,7 +82,7 @@ struct RethrowFirstArg {
     }
 };
 
-struct GrpcConfig {
+struct GrpcServerConfig {
     std::string host;
     int32_t thread_count{2};
     int32_t keepalive_time_ms{10000};
@@ -91,6 +91,7 @@ struct GrpcConfig {
     int32_t http2_max_pings_without_data{0};
     int32_t http2_min_sent_ping_interval_without_data_ms{10000};
     int32_t http2_min_recv_ping_interval_without_data_ms{5000};
+    bool enable_grpc_health_check{true};
 };
 
 template <auto RequestRPC>
@@ -134,7 +135,7 @@ using ExampleServerStreamingNotifyWhenDoneRPC =
 
 class GrpcServer final {
   public:
-    GrpcServer(GrpcConfig config) : m_config(std::move(config)) {
+    GrpcServer(GrpcServerConfig config) : m_config(std::move(config)) {
     }
 
     ~GrpcServer() = default;
@@ -144,7 +145,7 @@ class GrpcServer final {
     GrpcServer(GrpcServer&&) = delete;
     GrpcServer& operator=(GrpcServer&&) = delete;
 
-    static auto create(GrpcConfig config) {
+    static auto create(GrpcServerConfig config) {
         return std::make_unique<GrpcServer>(std::move(config));
     }
 
@@ -189,10 +190,18 @@ class GrpcServer final {
         if (m_add_channel_argument)
             m_add_channel_argument(builder);
 
-        agrpc::add_health_check_service(builder);
-        m_server_ptr = builder.BuildAndStart();
-        agrpc::start_health_check_service(*m_server_ptr, *m_grpc_contexts[0]);
-
+        if (m_config.enable_grpc_health_check) {
+            agrpc::add_health_check_service(builder);
+            m_server_ptr = builder.BuildAndStart();
+            m_log(LogLevel::Info,
+                  extractFilename(__FILE__),
+                  __LINE__,
+                  "start_health_check_service");
+            agrpc::start_health_check_service(*m_server_ptr,
+                                              *m_grpc_contexts[0]);
+        } else {
+            m_server_ptr = builder.BuildAndStart();
+        }
         for (int32_t i = 0; i < m_config.thread_count; ++i) {
             m_threads.emplace_back([this, i] {
                 auto& grpc_context = *m_grpc_contexts[i];
@@ -464,7 +473,7 @@ class GrpcServer final {
 #endif
     }
 
-    GrpcConfig m_config;
+    GrpcServerConfig m_config;
     std::function<void(LogLevel, std::string_view, int, std::string)> m_log =
         [](auto, auto, auto, auto) {};
     std::function<void(grpc::ServerBuilder&)> m_add_channel_argument;
@@ -515,7 +524,7 @@ class GrpcServer final {
 #include <grpc_server.hpp>
 
 int main() {
-    peak::GrpcConfig config{
+    peak::GrpcServerConfig config{
         .host = "0.0.0.0:5566",
         .thread_count = 1,
         .keepalive_time_ms = 10000,
@@ -524,6 +533,7 @@ int main() {
         .http2_max_pings_without_data = 0,
         .http2_min_sent_ping_interval_without_data_ms = 10000,
         .http2_min_recv_ping_interval_without_data_ms = 5000,
+        .enable_grpc_health_check = true,
     };
     // auto m_grpc_server = peak::GrpcServer::create(m_config);
     auto m_grpc_server = std::make_unique<peak::GrpcServer>(config);

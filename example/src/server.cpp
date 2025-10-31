@@ -284,7 +284,7 @@ struct TestServer {
     }
 
     void init() {
-        m_config = peak::GrpcConfig{
+        m_config = peak::GrpcServerConfig{
             .host = "0.0.0.0:5566",
             .thread_count = 10,
         };
@@ -516,7 +516,7 @@ struct TestServer {
 
     std::shared_ptr<peak::GrpcServer> m_grpc_server;
     std::shared_ptr<PubSubService<std::string>> m_pub_sub_service;
-    peak::GrpcConfig m_config;
+    peak::GrpcServerConfig m_config;
     bool m_stop{false};
     int32_t m_channel_size{1000000};
     std::mutex m_stop_mutex;
