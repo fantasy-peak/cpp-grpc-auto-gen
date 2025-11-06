@@ -65,6 +65,7 @@ if __name__ == "__main__":
     # --- Main File Generation ---
     config['out_server_file'] = args.out_server_file
     config['out_client_file'] = args.out_client_file
+    config['version'] = 'v1.0.0'
     config['package'] = config.get('package', '').replace('.', '::')
 
     render_write_format("grpc_server.hpp.j2", args.out_server_file, config, jenv, args.format)
@@ -100,6 +101,7 @@ if __name__ == "__main__":
         tmp_config = config.copy()
         tmp_config['interface'] = {service_name: method_list}
         client_out_path = os.path.join(src_dir, f"{stringcase.snakecase(service_name)}_client.cpp")
+        tmp_config['out_client_cpp_file'] = f"{stringcase.snakecase(service_name)}_client.cpp"
         render_write_format("client.cpp.j2", client_out_path, tmp_config, jenv, args.format)
     
     print("\nproject generation complete.")
