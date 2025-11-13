@@ -170,7 +170,7 @@ int main() {
     });
     grpc_server->setLogCallback([](auto level, auto file, auto line, auto msg) {
         spdlog::info("level: {}, file: {}, line: {}, msg: {}",
-                     level == peak::LogLevel::Info ? "info" : "error",
+                     peak::GrpcServer::toString(level),
                      file,
                      line,
                      msg);

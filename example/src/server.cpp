@@ -285,7 +285,7 @@ struct TestServer {
 
     void init() {
         m_config = peak::GrpcServerConfig{
-            .host = "0.0.0.0:5566",
+            .addr_uri = "0.0.0.0:5566",
             .thread_count = 10,
         };
         // shared_memory_object::remove("MySharedMemory");
@@ -336,7 +336,7 @@ struct TestServer {
         });
 
         m_grpc_server = peak::GrpcServer::create(m_config);
-        m_grpc_server->setLogCallback([](peak::LogLevel level,
+        m_grpc_server->setLogCallback([](peak::GrpcServer::LogLevel level,
                                          std::string_view file,
                                          int line,
                                          std::string msg) {

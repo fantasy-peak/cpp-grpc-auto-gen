@@ -58,20 +58,6 @@ namespace {{grpc.namespace}} {
 namespace asio = boost::asio;
 #endif
 
-enum class LogLevel : uint8_t {
-    Debug,
-    Info,
-    Error,
-};
-
-consteval std::string_view extractFilename(const char* path) {
-    std::string_view path_view{path};
-    std::size_t last_slash = path_view.find_last_of("/\\");
-    return (last_slash == std::string_view::npos)
-               ? path_view
-               : path_view.substr(last_slash + 1);
-}
-
 struct {{grpc.server_class_name}}Config {
     std::string addr_uri;
     int32_t thread_count{2};
@@ -100,19 +86,14 @@ using ConcurrentChannel = asio::experimental::concurrent_channel<void(asio::erro
 
 /*************************************************** */
 #if USE_GRPC_NOTIFY_WHEN_DONE
-struct ServerRPCNotifyWhenDoneTraits : agrpc::DefaultServerRPCTraits {
+struct {{grpc.server_class_name}}ServerRPCNotifyWhenDoneTraits : agrpc::DefaultServerRPCTraits {
     static constexpr bool NOTIFY_WHEN_DONE = true;
 };
-
-template <auto RequestRPC>
-using NotifyWhenDoneServerRPC =
-    agrpc::ServerRPC<RequestRPC, ServerRPCNotifyWhenDoneTraits>;
-
 
 {% for service_name in grpc.interface %}
 {% for interface in grpc.interface[service_name] %}
 {% if interface.type=='server-streaming-rpc' %}
-using {{service_name}}{{interface.name}}NotifyWhenDoneRPC = NotifyWhenDoneServerRPC<&{{grpc.package}}::{{service_name}}::AsyncService::Request{{interface.name}}>;
+using {{service_name}}{{interface.name}}NotifyWhenDoneRPC = agrpc::ServerRPC<&{{grpc.package}}::{{service_name}}::AsyncService::Request{{interface.name}}, {{grpc.server_class_name}}ServerRPCNotifyWhenDoneTraits>;
 {% else -%}
 
 {% endif -%}
@@ -126,7 +107,7 @@ public:
     {{grpc.server_class_name}}({{grpc.server_class_name}}Config config)
         : m_config(std::move(config)) {
     }
-    ~{{grpc.server_class_name}}() = default;
+    ~{{grpc.server_class_name}}() {stop();}
 
     {{grpc.server_class_name}}(const {{grpc.server_class_name}}&) = delete;
     {{grpc.server_class_name}}& operator=(const {{grpc.server_class_name}}&) = delete;
@@ -135,6 +116,14 @@ public:
 
     static auto create({{grpc.server_class_name}}Config config) {
         return std::make_unique<{{grpc.server_class_name}}>(std::move(config));
+    }
+
+    static consteval std::string_view extractFilename(const char* path) {
+        std::string_view path_view{path};
+        std::size_t last_slash = path_view.find_last_of("/\\");
+        return (last_slash == std::string_view::npos)
+                   ? path_view
+                   : path_view.substr(last_slash + 1);
     }
 
     void start() {
@@ -234,6 +223,25 @@ public:
     {% endfor %}
 #endif
 
+    enum class LogLevel : uint8_t {
+        Debug,
+        Info,
+        Error,
+    };
+
+    static std::string_view toString(LogLevel log_level) {
+        switch (log_level) {
+            case LogLevel::Debug:
+                return "Debug";
+            case LogLevel::Info:
+                return "Info";
+            case LogLevel::Error:
+                return "Error";
+            default:
+                return "Unknown";
+        }
+    }
+
 private:
     struct RethrowFirstArg {
         template <class... T>
@@ -287,6 +295,8 @@ private:
                     co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
                     m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -301,6 +311,8 @@ private:
                     co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc);
                 } catch (const std::exception& e) {
                     m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -314,6 +326,8 @@ private:
                     co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
                     m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -333,6 +347,8 @@ private:
                     co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc);
                 } catch (const std::exception& e) {
                     m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -346,6 +362,8 @@ private:
                     co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
                     m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },

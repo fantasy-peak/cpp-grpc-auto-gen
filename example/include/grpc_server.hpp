@@ -56,20 +56,6 @@ namespace peak {
 namespace asio = boost::asio;
 #endif
 
-enum class LogLevel : uint8_t {
-    Debug,
-    Info,
-    Error,
-};
-
-consteval std::string_view extractFilename(const char* path) {
-    std::string_view path_view{path};
-    std::size_t last_slash = path_view.find_last_of("/\\");
-    return (last_slash == std::string_view::npos)
-               ? path_view
-               : path_view.substr(last_slash + 1);
-}
-
 struct GrpcServerConfig {
     std::string addr_uri;
     int32_t thread_count{2};
@@ -104,16 +90,13 @@ using ConcurrentChannel =
 
 /*************************************************** */
 #if USE_GRPC_NOTIFY_WHEN_DONE
-struct ServerRPCNotifyWhenDoneTraits : agrpc::DefaultServerRPCTraits {
+struct GrpcServerServerRPCNotifyWhenDoneTraits : agrpc::DefaultServerRPCTraits {
     static constexpr bool NOTIFY_WHEN_DONE = true;
 };
 
-template <auto RequestRPC>
-using NotifyWhenDoneServerRPC =
-    agrpc::ServerRPC<RequestRPC, ServerRPCNotifyWhenDoneTraits>;
-
-using ExampleServerStreamingNotifyWhenDoneRPC = NotifyWhenDoneServerRPC<
-    &fantasy::v1::Example::AsyncService::RequestServerStreaming>;
+using ExampleServerStreamingNotifyWhenDoneRPC = agrpc::ServerRPC<
+    &fantasy::v1::Example::AsyncService::RequestServerStreaming,
+    GrpcServerServerRPCNotifyWhenDoneTraits>;
 
 #endif
 /*************************************************** */
@@ -123,7 +106,9 @@ class GrpcServer final {
     GrpcServer(GrpcServerConfig config) : m_config(std::move(config)) {
     }
 
-    ~GrpcServer() = default;
+    ~GrpcServer() {
+        stop();
+    }
 
     GrpcServer(const GrpcServer&) = delete;
     GrpcServer& operator=(const GrpcServer&) = delete;
@@ -132,6 +117,14 @@ class GrpcServer final {
 
     static auto create(GrpcServerConfig config) {
         return std::make_unique<GrpcServer>(std::move(config));
+    }
+
+    static consteval std::string_view extractFilename(const char* path) {
+        std::string_view path_view{path};
+        std::size_t last_slash = path_view.find_last_of("/\\");
+        return (last_slash == std::string_view::npos)
+                   ? path_view
+                   : path_view.substr(last_slash + 1);
     }
 
     void start() {
@@ -253,6 +246,25 @@ class GrpcServer final {
     }
 #endif
 
+    enum class LogLevel : uint8_t {
+        Debug,
+        Info,
+        Error,
+    };
+
+    static std::string_view toString(LogLevel log_level) {
+        switch (log_level) {
+            case LogLevel::Debug:
+                return "Debug";
+            case LogLevel::Info:
+                return "Info";
+            case LogLevel::Error:
+                return "Error";
+            default:
+                return "Unknown";
+        }
+    }
+
   private:
     struct RethrowFirstArg {
         template <class... T>
@@ -312,6 +324,11 @@ class GrpcServer final {
                           extractFilename(__FILE__),
                           __LINE__,
                           e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          "Unknown exception caught");
                 }
                 co_return;
             },
@@ -331,6 +348,11 @@ class GrpcServer final {
                           extractFilename(__FILE__),
                           __LINE__,
                           e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          "Unknown exception caught");
                 }
                 co_return;
             },
@@ -348,6 +370,11 @@ class GrpcServer final {
                           extractFilename(__FILE__),
                           __LINE__,
                           e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          "Unknown exception caught");
                 }
                 co_return;
             },
@@ -368,6 +395,11 @@ class GrpcServer final {
                           extractFilename(__FILE__),
                           __LINE__,
                           e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          "Unknown exception caught");
                 }
                 co_return;
             },
@@ -384,6 +416,11 @@ class GrpcServer final {
                           extractFilename(__FILE__),
                           __LINE__,
                           e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          "Unknown exception caught");
                 }
                 co_return;
             },
@@ -401,6 +438,11 @@ class GrpcServer final {
                           extractFilename(__FILE__),
                           __LINE__,
                           e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          "Unknown exception caught");
                 }
                 co_return;
             },
@@ -420,6 +462,11 @@ class GrpcServer final {
                           extractFilename(__FILE__),
                           __LINE__,
                           e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          "Unknown exception caught");
                 }
                 co_return;
             },
@@ -437,6 +484,11 @@ class GrpcServer final {
                           extractFilename(__FILE__),
                           __LINE__,
                           e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          "Unknown exception caught");
                 }
                 co_return;
             },
@@ -456,6 +508,11 @@ class GrpcServer final {
                           extractFilename(__FILE__),
                           __LINE__,
                           e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          "Unknown exception caught");
                 }
                 co_return;
             },
@@ -472,6 +529,11 @@ class GrpcServer final {
                           extractFilename(__FILE__),
                           __LINE__,
                           e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error,
+                          extractFilename(__FILE__),
+                          __LINE__,
+                          "Unknown exception caught");
                 }
                 co_return;
             },

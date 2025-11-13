@@ -156,7 +156,7 @@ int main() {
     });
     grpc_server->setLogCallback([](auto level, auto file, auto line, auto msg) {
         spdlog::info("level: {}, file: {}, line: {}, msg: {}", 
-            level == {{grpc.namespace}}::LogLevel::Info ? "info" : "error", file, line, msg);
+            {{grpc.namespace}}::{{grpc.server_class_name}}::toString(level), file, line, msg);
     });
     using namespace grpc_auto_gen;
     Handler handler;
