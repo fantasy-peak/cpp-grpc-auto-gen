@@ -21,6 +21,7 @@ def render_write_format(template_name, output_path, render_config, jenv, formatt
     content = template.render(grpc=render_config)
     with open(output_path, 'w') as f:
         f.write(content)
+        f.write("\n")
     
     if formatter and formatter.lower() != 'none':
         try:

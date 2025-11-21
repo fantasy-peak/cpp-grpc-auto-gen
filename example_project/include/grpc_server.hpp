@@ -5,7 +5,7 @@
 //
 //  @author  : fantasy-peak
 //  @license : MIT License (see License file)
-//  @copyright Copyright (c) 2024, fantasy-peak
+//  @copyright Copyright (c) 2025, fantasy-peak
 // -----------------------------------------------------------------------------
 
 #pragma once
@@ -579,105 +579,3 @@ class GrpcServer final {
 };
 
 }  // namespace peak
-
-/* example
-
-#ifndef AGRPC_BOOST_ASIO
-#define AGRPC_BOOST_ASIO 1
-#endif
-
-#ifndef USE_BOOST_CIRCULAR_BUFFER
-#define USE_BOOST_CIRCULAR_BUFFER 1
-#endif
-
-#include <grpc_server.hpp>
-
-int main() {
-    peak::GrpcServerConfig config{
-        .addr_uri = "0.0.0.0:5566",
-        .thread_count = 1,
-        .keepalive_time_ms = 10000,
-        .keepalive_timeout_ms = 10000,
-        .keepalive_permit_without_calls = 1,
-        .http2_max_pings_without_data = 0,
-        .http2_min_sent_ping_interval_without_data_ms = 10000,
-        .http2_min_recv_ping_interval_without_data_ms = 5000,
-        .enable_grpc_health_check = true,
-    };
-    // auto m_grpc_server = peak::GrpcServer::create(m_config);
-    auto m_grpc_server = std::make_unique<peak::GrpcServer>(config);
-    namespace asio = boost::asio;
-
-    m_grpc_server->setExampleNoticeRpcCallback(
-        [] (peak::ExampleNoticeRPC& rpc) -> asio::awaitable<void> {
-            (void)rpc;
-            co_return;
-        });
-    m_grpc_server->setExampleGetOrderSeqNoRpcCallback(
-        [] (peak::ExampleGetOrderSeqNoRPC& rpc,
-fantasy::v1::GetOrderSeqNoRequest& request) -> asio::awaitable<void> {
-            (void)rpc;
-            (void)request;
-            co_return;
-        });
-    m_grpc_server->setExampleOrderRpcCallback(
-        [] (peak::ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request) ->
-asio::awaitable<void> { (void)rpc; (void)request; co_return;
-        });
-    m_grpc_server->setExampleServerStreamingRpcCallback(
-        [] (peak::ExampleServerStreamingRPC& rpc, fantasy::v1::OrderRequest&
-request) -> asio::awaitable<void> { (void)rpc; (void)request; co_return;
-        });
-    m_grpc_server->setExampleClientStreamingRpcCallback(
-        [] (peak::ExampleClientStreamingRPC& rpc) -> asio::awaitable<void> {
-            (void)rpc;
-            co_return;
-        });
-    m_grpc_server->start();
-    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-    m_grpc_server->stop();
-
-    return 0;
-}
-
-//-----------------------------------------------------------
-
-asio::awaitable<void> notice(peak::ExampleNoticeRPC& rpc){
-    (void)rpc;
-    co_return;
-}
-m_grpc_server->setExampleNoticeRpcCallback(std::bind_front(&Test::notice,
-this));
-
-
-asio::awaitable<void> getOrderSeqNo(peak::ExampleGetOrderSeqNoRPC& rpc,
-fantasy::v1::GetOrderSeqNoRequest& request) { (void)rpc; co_return;
-}
-m_grpc_server->setExampleGetOrderSeqNoRpcCallback(std::bind_front(&Test::getOrderSeqNo,
-this));
-
-
-
-asio::awaitable<void> order(peak::ExampleOrderRPC& rpc,
-fantasy::v1::OrderRequest& request) { (void)rpc; co_return;
-}
-m_grpc_server->setExampleOrderRpcCallback(std::bind_front(&Test::order, this));
-
-
-
-asio::awaitable<void> serverStreaming(peak::ExampleServerStreamingRPC& rpc,
-fantasy::v1::OrderRequest& request) { (void)rpc; co_return;
-}
-m_grpc_server->setExampleServerStreamingRpcCallback(std::bind_front(&Test::serverStreaming,
-this));
-
-
-
-asio::awaitable<void> clientStreaming(peak::ExampleClientStreamingRPC& rpc){
-    (void)rpc;
-    co_return;
-}
-m_grpc_server->setExampleClientStreamingRpcCallback(std::bind_front(&Test::clientStreaming,
-this));
-
-*/
