@@ -1,0 +1,64 @@
+name: rockylinux8-gcc13
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: rockylinux/rockylinux:8
+      options: --privileged
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Install Build Dependencies
+        run: |
+          set -o xtrace
+          dnf -y install dnf-plugins-core
+          dnf -y config-manager --set-enabled powertools
+          dnf -y install \
+             https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm
+          rpmkeys --import /etc/pki/rpm-gpg/RPM-GPG-KEY-*
+          dnf -y --exclude=systemtap --exclude=subversion install @development \
+             wget cmake git\
+             openssl-devel \
+             gcc-toolset-13* python3.11.x86_64 python3.11-devel.x86_64 sudo
+
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: build
+        run: |
+          source /opt/rh/gcc-toolset-13/enable
+          python3.11 -m venv env
+          source env/bin/activate
+          sudo pip install -r requirements.txt
+          wget https://github.com/xmake-io/xmake/releases/download/v3.0.5/xmake-v3.0.5.gz.run
+          chmod 777 xmake-v3.0.5.gz.run
+          ./xmake-v3.0.5.gz.run
+          source ~/.xmake/profile
+          export XMAKE_ROOT="y"
+          xmake --version
+          xrepo install -y protobuf-cpp
+          rm -rf example_project
+          ls -lrt
+          export PATH=$HOME/.xmake/packages/p/protobuf-cpp/33.1/ef5a1f066f784334984fa37b1443301d/bin:$PATH
+          python3 proto2yaml.py example/example.proto \
+              --namespace peak \
+              --server_class_name GrpcServer \
+              --client_class_name GrpcClient \
+              --include_grpc_files example.grpc.pb.h example.pb.h \
+              --out ./proto.yaml
+          python3 cpp-grpc-auto-gen.py \
+              --proto proto.yaml \
+              --template ./template \
+              --out_server_file example/include/grpc_server.hpp \
+              --out_client_file example/include/grpc_client.hpp \
+              --format=clang-format
+          cd example_project
+          xmake build -j 16 -y
+          xmake install -o . -v

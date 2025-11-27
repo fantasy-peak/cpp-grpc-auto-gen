@@ -19,7 +19,7 @@ This project provides a Python script to automatically generate a C++ gRPC proje
 
 - Python 3.x
 - The Python packages listed in `requirements.txt`.
-- A C++ compiler and `xmake` installed to build the generated project.
+- A C++ compiler(Need to support C++20) and `xmake` installed to build the generated project.
 
 ## Installation
 
