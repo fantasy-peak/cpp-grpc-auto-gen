@@ -55,6 +55,7 @@ This example shows how to generate a complete gRPC project from the `example.pro
             --template ./template \
             --out_server_file example/include/grpc_server.hpp \
             --out_client_file example/include/grpc_client.hpp \
+            --example ./example_project \
             --format=clang-format
 
 2.  **Build and run the generated project:**

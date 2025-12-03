@@ -54,6 +54,7 @@ if __name__ == "__main__":
     parser.add_argument('--format', type=str, default='clang-format', help='Code formatter command (e.g., clang-format). Use "none" to disable.')
     parser.add_argument('--out_server_file', type=str, required=True, help='Output path for the main generated header file')
     parser.add_argument('--out_client_file', type=str, required=True, help='Output path for the main generated header file')
+    parser.add_argument('--example', type=str, default='./example_project', help='Output path for the example project')
     args = parser.parse_args()
 
     # --- Setup ---
@@ -76,7 +77,7 @@ if __name__ == "__main__":
 
     # --- Example Project Generation ---
     print("\n--- Generating Project ---")
-    example_dir = "example_project"
+    example_dir = args.example
     src_dir = os.path.join(example_dir, "src")
     include_dir = os.path.join(example_dir, "include")
     proto_dir = os.path.join(example_dir, "proto")
