@@ -125,9 +125,10 @@ struct TestServer {
         waiter.initiate(agrpc::read, rpc, request);
 
         using DATA = std::shared_ptr<Message<std::string>>;
-        auto chan =
-            std::make_shared<peak::ConcurrentChannel<DATA>>(rpc.get_executor(),
-                                                            m_channel_size);
+        using ConcurrentChannel = boost::asio::experimental::concurrent_channel<
+            void(boost::system::error_code, DATA)>;
+        auto chan = std::make_shared<ConcurrentChannel>(rpc.get_executor(),
+                                                        m_channel_size);
 
         auto stop_chan = std::make_shared<StopChannel>(rpc.get_executor(), 1);
 

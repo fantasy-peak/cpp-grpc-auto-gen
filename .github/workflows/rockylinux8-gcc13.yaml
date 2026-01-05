@@ -46,7 +46,7 @@ jobs:
           xrepo install -y protobuf-cpp
           rm -rf example_project
           ls -lrt
-          export PATH=$HOME/.xmake/packages/p/protobuf-cpp/33.1/ef5a1f066f784334984fa37b1443301d/bin:$PATH
+          export PATH=/$HOME/.xmake/packages/p/protobuf-cpp/33.2/b3738b6a93ec47949689248d7fcccfaa/bin:$PATH
           python3 proto2yaml.py example/example.proto \
               --namespace peak \
               --server_class_name GrpcServer \

@@ -76,14 +76,6 @@ using {{service_name}}{{interface.name}}RPC = agrpc::ServerRPC<&{{grpc.package}}
 {% endfor -%}
 {% endfor -%}
 
-#ifdef AGRPC_BOOST_ASIO
-template <typename T>
-using ConcurrentChannel = asio::experimental::concurrent_channel<void(boost::system::error_code, T)>;
-#else
-template <typename T>
-using ConcurrentChannel = asio::experimental::concurrent_channel<void(asio::error_code, T)>;
-#endif
-
 /*************************************************** */
 #if USE_GRPC_NOTIFY_WHEN_DONE
 struct {{grpc.server_class_name}}ServerRPCNotifyWhenDoneTraits : agrpc::DefaultServerRPCTraits {

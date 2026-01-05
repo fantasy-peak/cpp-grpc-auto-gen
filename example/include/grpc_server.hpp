@@ -78,16 +78,6 @@ using ExampleServerStreamingRPC = agrpc::ServerRPC<
     &fantasy::v1::Example::AsyncService::RequestServerStreaming>;
 using ExampleClientStreamingRPC = agrpc::ServerRPC<
     &fantasy::v1::Example::AsyncService::RequestClientStreaming>;
-#ifdef AGRPC_BOOST_ASIO
-template <typename T>
-using ConcurrentChannel =
-    asio::experimental::concurrent_channel<void(boost::system::error_code, T)>;
-#else
-template <typename T>
-using ConcurrentChannel =
-    asio::experimental::concurrent_channel<void(asio::error_code, T)>;
-#endif
-
 /*************************************************** */
 #if USE_GRPC_NOTIFY_WHEN_DONE
 struct GrpcServerServerRPCNotifyWhenDoneTraits : agrpc::DefaultServerRPCTraits {
