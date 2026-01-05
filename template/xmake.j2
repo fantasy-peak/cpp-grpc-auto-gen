@@ -12,7 +12,7 @@ add_requires("abseil")
 -- add_requires("cmake::Boost", {system = true, configs = {components = {"regex", "system"}}))
 add_requires("spdlog", {configs={std_format=true}})
 add_requires("protobuf-cpp", "protoc")
-add_requires("asio-grpc 3791e86266fb4772fc40a1f1a901a950f57ac1f6")
+add_requires("asio-grpc 55ae7f520a7827ad9eadc1dc11c1aa6562343a05")
 add_requires("grpc")
 
 set_languages("c23", "c++23")
