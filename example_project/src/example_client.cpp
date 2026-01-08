@@ -17,19 +17,15 @@ namespace grpc_auto_gen {
 
 namespace asio = boost::asio;
 
-asio::awaitable<void> makeNoticeRequest(agrpc::GrpcContext& grpc_context,
-                                        fantasy::v1::Example::Stub& stub) {
+asio::awaitable<void> makeNoticeRequest(agrpc::GrpcContext& grpc_context, fantasy::v1::Example::Stub& stub) {
     // bidirectional-streaming-rpc
-    using RPC =
-        agrpc::ClientRPC<&fantasy::v1::Example::Stub::PrepareAsyncNotice>;
+    using RPC = agrpc::ClientRPC<&fantasy::v1::Example::Stub::PrepareAsyncNotice>;
 
     RPC rpc{grpc_context};
-    rpc.context().set_deadline(std::chrono::system_clock::now() +
-                               std::chrono::seconds(5));
+    rpc.context().set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
 
     if (!co_await rpc.start(stub)) {
-        // Channel is either permanently broken or transiently broken but with
-        // the fail-fast option.
+        // Channel is either permanently broken or transiently broken but with the fail-fast option.
         co_return;
     }
 
@@ -40,53 +36,38 @@ asio::awaitable<void> makeNoticeRequest(agrpc::GrpcContext& grpc_context,
     // Reads and writes can be performed simultaneously.
     using namespace asio::experimental::awaitable_operators;
     auto [read_ok, write_ok] =
-        co_await (rpc.read(response, asio::use_awaitable) &&
-                  rpc.write(request, asio::use_awaitable));
+        co_await (rpc.read(response, asio::use_awaitable) && rpc.write(request, asio::use_awaitable));
 
     const grpc::Status status = co_await rpc.finish();
 }
 
-asio::awaitable<void> makeGetOrderSeqNoRequest(
-    agrpc::GrpcContext& grpc_context,
-    fantasy::v1::Example::Stub& stub) {
-    using RPC = agrpc::ClientRPC<
-        &fantasy::v1::Example::Stub::PrepareAsyncGetOrderSeqNo>;
+asio::awaitable<void> makeGetOrderSeqNoRequest(agrpc::GrpcContext& grpc_context, fantasy::v1::Example::Stub& stub) {
+    using RPC = agrpc::ClientRPC<&fantasy::v1::Example::Stub::PrepareAsyncGetOrderSeqNo>;
     grpc::ClientContext client_context;
-    client_context.set_deadline(std::chrono::system_clock::now() +
-                                std::chrono::seconds(5));
+    client_context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
     fantasy::v1::GetOrderSeqNoRequest request;
     fantasy::v1::GetOrderSeqNoResponse response;
-    const auto status = co_await RPC::request(
-        grpc_context, stub, client_context, request, response);
+    const auto status = co_await RPC::request(grpc_context, stub, client_context, request, response);
     co_return;
 }
 
-asio::awaitable<void> makeOrderRequest(agrpc::GrpcContext& grpc_context,
-                                       fantasy::v1::Example::Stub& stub) {
-    using RPC =
-        agrpc::ClientRPC<&fantasy::v1::Example::Stub::PrepareAsyncOrder>;
+asio::awaitable<void> makeOrderRequest(agrpc::GrpcContext& grpc_context, fantasy::v1::Example::Stub& stub) {
+    using RPC = agrpc::ClientRPC<&fantasy::v1::Example::Stub::PrepareAsyncOrder>;
     grpc::ClientContext client_context;
-    client_context.set_deadline(std::chrono::system_clock::now() +
-                                std::chrono::seconds(5));
+    client_context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
     fantasy::v1::OrderRequest request;
     fantasy::v1::OrderResponse response;
-    const auto status = co_await RPC::request(
-        grpc_context, stub, client_context, request, response);
+    const auto status = co_await RPC::request(grpc_context, stub, client_context, request, response);
     co_return;
 }
 
-asio::awaitable<void> makeServerStreamingRequest(
-    agrpc::GrpcContext& grpc_context,
-    fantasy::v1::Example::Stub& stub) {
-    using RPC = agrpc::ClientRPC<
-        &fantasy::v1::Example::Stub::PrepareAsyncServerStreaming>;
+asio::awaitable<void> makeServerStreamingRequest(agrpc::GrpcContext& grpc_context, fantasy::v1::Example::Stub& stub) {
+    using RPC = agrpc::ClientRPC<&fantasy::v1::Example::Stub::PrepareAsyncServerStreaming>;
     grpc::ClientContext client_context;
-    client_context.set_deadline(std::chrono::system_clock::now() +
-                                std::chrono::seconds(5));
+    client_context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
 
     RPC rpc{grpc_context};
-    rpc.context().set_deadline(std::chrono::system_clock::now() +
-                               std::chrono::seconds(5));
+    rpc.context().set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
 
     fantasy::v1::OrderRequest request;
     co_await rpc.start(stub, request);
@@ -102,28 +83,22 @@ asio::awaitable<void> makeServerStreamingRequest(
     co_return;
 }
 
-asio::awaitable<void> makeClientStreamingRequest(
-    agrpc::GrpcContext& grpc_context,
-    fantasy::v1::Example::Stub& stub) {
-    using RPC = agrpc::ClientRPC<
-        &fantasy::v1::Example::Stub::PrepareAsyncClientStreaming>;
+asio::awaitable<void> makeClientStreamingRequest(agrpc::GrpcContext& grpc_context, fantasy::v1::Example::Stub& stub) {
+    using RPC = agrpc::ClientRPC<&fantasy::v1::Example::Stub::PrepareAsyncClientStreaming>;
     RPC rpc{grpc_context};
-    rpc.context().set_deadline(std::chrono::system_clock::now() +
-                               std::chrono::seconds(5));
+    rpc.context().set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(5));
 
     fantasy::v1::OrderResponse response;
     const bool start_ok = co_await rpc.start(stub, response);
 
-    // Optionally read initial metadata first. Otherwise it will be read along
-    // with the first write.
+    // Optionally read initial metadata first. Otherwise it will be read along with the first write.
     const bool read_ok = co_await rpc.read_initial_metadata();
 
     // Send a message.
     fantasy::v1::OrderRequest request;
     const bool write_ok = co_await rpc.write(request);
 
-    // Wait for the server to recieve all our messages and obtain the server's
-    // response + status.
+    // Wait for the server to recieve all our messages and obtain the server's response + status.
     const grpc::Status status = co_await rpc.finish();
     auto ok = status.ok();
 
@@ -140,10 +115,9 @@ int main(int argc, const char** argv) {
     const auto thread_count = std::thread::hardware_concurrency();
     using namespace grpc_auto_gen;
     auto client = peak::GrpcClient::create(host, thread_count);
-    client->setLogCallback(
-        [](std::string_view file, int line, std::string_view msg) {
-            spdlog::info("file: {}, line: {}, msg: {}", file, line, msg);
-        });
+    client->setLogCallback([](std::string_view file, int line, std::string_view msg) {
+        spdlog::info("file: {}, line: {}, msg: {}", file, line, msg);
+    });
     client->notice(makeNoticeRequest);
     client->getOrderSeqNo(makeGetOrderSeqNoRequest);
     client->order(makeOrderRequest);

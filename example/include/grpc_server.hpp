@@ -68,25 +68,20 @@ struct GrpcServerConfig {
     bool enable_grpc_health_check{true};
 };
 
-using ExampleNoticeRPC =
-    agrpc::ServerRPC<&fantasy::v1::Example::AsyncService::RequestNotice>;
-using ExampleGetOrderSeqNoRPC =
-    agrpc::ServerRPC<&fantasy::v1::Example::AsyncService::RequestGetOrderSeqNo>;
-using ExampleOrderRPC =
-    agrpc::ServerRPC<&fantasy::v1::Example::AsyncService::RequestOrder>;
-using ExampleServerStreamingRPC = agrpc::ServerRPC<
-    &fantasy::v1::Example::AsyncService::RequestServerStreaming>;
-using ExampleClientStreamingRPC = agrpc::ServerRPC<
-    &fantasy::v1::Example::AsyncService::RequestClientStreaming>;
+using ExampleNoticeRPC = agrpc::ServerRPC<&fantasy::v1::Example::AsyncService::RequestNotice>;
+using ExampleGetOrderSeqNoRPC = agrpc::ServerRPC<&fantasy::v1::Example::AsyncService::RequestGetOrderSeqNo>;
+using ExampleOrderRPC = agrpc::ServerRPC<&fantasy::v1::Example::AsyncService::RequestOrder>;
+using ExampleServerStreamingRPC = agrpc::ServerRPC<&fantasy::v1::Example::AsyncService::RequestServerStreaming>;
+using ExampleClientStreamingRPC = agrpc::ServerRPC<&fantasy::v1::Example::AsyncService::RequestClientStreaming>;
 /*************************************************** */
 #if USE_GRPC_NOTIFY_WHEN_DONE
 struct GrpcServerServerRPCNotifyWhenDoneTraits : agrpc::DefaultServerRPCTraits {
     static constexpr bool NOTIFY_WHEN_DONE = true;
 };
 
-using ExampleServerStreamingNotifyWhenDoneRPC = agrpc::ServerRPC<
-    &fantasy::v1::Example::AsyncService::RequestServerStreaming,
-    GrpcServerServerRPCNotifyWhenDoneTraits>;
+using ExampleServerStreamingNotifyWhenDoneRPC =
+    agrpc::ServerRPC<&fantasy::v1::Example::AsyncService::RequestServerStreaming,
+                     GrpcServerServerRPCNotifyWhenDoneTraits>;
 
 #endif
 /*************************************************** */
@@ -112,27 +107,21 @@ class GrpcServer final {
     static consteval std::string_view extractFilename(const char* path) {
         std::string_view path_view{path};
         std::size_t last_slash = path_view.find_last_of("/\\");
-        return (last_slash == std::string_view::npos)
-                   ? path_view
-                   : path_view.substr(last_slash + 1);
+        return (last_slash == std::string_view::npos) ? path_view : path_view.substr(last_slash + 1);
     }
 
     void start() {
         checkCallback();
         grpc::ServerBuilder builder;
         for (int i = 0; i < m_config.thread_count; i++) {
-            m_grpc_contexts.emplace_back(std::make_shared<agrpc::GrpcContext>(
-                builder.AddCompletionQueue()));
+            m_grpc_contexts.emplace_back(std::make_shared<agrpc::GrpcContext>(builder.AddCompletionQueue()));
         }
         auto creds = grpc::InsecureServerCredentials();
         if (m_create_server_credentials)
             creds = m_create_server_credentials();
         builder.AddListeningPort(m_config.addr_uri, creds);
 #ifdef OPEN_GRPC_REFLECTION_PLUGIN
-        m_log(LogLevel::Info,
-              extractFilename(__FILE__),
-              __LINE__,
-              "call InitProtoReflectionServerBuilderPlugin");
+        m_log(LogLevel::Info, extractFilename(__FILE__), __LINE__, "call InitProtoReflectionServerBuilderPlugin");
         grpc::reflection::InitProtoReflectionServerBuilderPlugin();
 #endif
         m_example_svc = std::make_unique<fantasy::v1::Example::AsyncService>();
@@ -145,37 +134,26 @@ class GrpcServer final {
                 m_log(LogLevel::Debug,
                       extractFilename(__FILE__),
                       __LINE__,
-                      std::string{argument} + "[" +
-                          std::to_string(data.value()) + "]");
+                      std::string{argument} + "[" + std::to_string(data.value()) + "]");
                 builder.AddChannelArgument(argument, data.value());
             }
         };
-        add_channel_argument(GRPC_ARG_KEEPALIVE_TIME_MS,
-                             m_config.keepalive_time_ms);
-        add_channel_argument(GRPC_ARG_KEEPALIVE_TIMEOUT_MS,
-                             m_config.keepalive_timeout_ms);
-        add_channel_argument(GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS,
-                             m_config.keepalive_permit_without_calls);
-        add_channel_argument(GRPC_ARG_HTTP2_MAX_PINGS_WITHOUT_DATA,
-                             m_config.http2_max_pings_without_data);
-        add_channel_argument(
-            GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS,
-            m_config.http2_min_sent_ping_interval_without_data_ms);
-        add_channel_argument(
-            GRPC_ARG_HTTP2_MIN_RECV_PING_INTERVAL_WITHOUT_DATA_MS,
-            m_config.http2_min_recv_ping_interval_without_data_ms);
+        add_channel_argument(GRPC_ARG_KEEPALIVE_TIME_MS, m_config.keepalive_time_ms);
+        add_channel_argument(GRPC_ARG_KEEPALIVE_TIMEOUT_MS, m_config.keepalive_timeout_ms);
+        add_channel_argument(GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS, m_config.keepalive_permit_without_calls);
+        add_channel_argument(GRPC_ARG_HTTP2_MAX_PINGS_WITHOUT_DATA, m_config.http2_max_pings_without_data);
+        add_channel_argument(GRPC_ARG_HTTP2_MIN_SENT_PING_INTERVAL_WITHOUT_DATA_MS,
+                             m_config.http2_min_sent_ping_interval_without_data_ms);
+        add_channel_argument(GRPC_ARG_HTTP2_MIN_RECV_PING_INTERVAL_WITHOUT_DATA_MS,
+                             m_config.http2_min_recv_ping_interval_without_data_ms);
         if (m_add_channel_argument)
             m_add_channel_argument(builder);
 
         if (m_config.enable_grpc_health_check) {
             agrpc::add_health_check_service(builder);
             m_server_ptr = builder.BuildAndStart();
-            m_log(LogLevel::Info,
-                  extractFilename(__FILE__),
-                  __LINE__,
-                  "start_health_check_service");
-            agrpc::start_health_check_service(*m_server_ptr,
-                                              *m_grpc_contexts[0]);
+            m_log(LogLevel::Info, extractFilename(__FILE__), __LINE__, "start_health_check_service");
+            agrpc::start_health_check_service(*m_server_ptr, *m_grpc_contexts[0]);
         } else {
             m_server_ptr = builder.BuildAndStart();
         }
@@ -274,30 +252,24 @@ class GrpcServer final {
         if (!m_example_notice_rpc_handler)
             throw std::runtime_error("not call setExampleNoticeRpcCallback");
         if (!m_example_get_order_seq_no_rpc_handler)
-            throw std::runtime_error(
-                "not call setExampleGetOrderSeqNoRpcCallback");
+            throw std::runtime_error("not call setExampleGetOrderSeqNoRpcCallback");
         if (!m_example_order_rpc_handler)
             throw std::runtime_error("not call setExampleOrderRpcCallback");
         if (!m_example_server_streaming_notify_when_done_rpc_handler)
-            throw std::runtime_error(
-                "not call setExampleServerStreamingNotifyWhenDoneRpcCallback");
+            throw std::runtime_error("not call setExampleServerStreamingNotifyWhenDoneRpcCallback");
         if (!m_example_client_streaming_rpc_handler)
-            throw std::runtime_error(
-                "not call setExampleClientStreamingRpcCallback");
+            throw std::runtime_error("not call setExampleClientStreamingRpcCallback");
 #else
         if (!m_example_notice_rpc_handler)
             throw std::runtime_error("not call setExampleNoticeRpcCallback");
         if (!m_example_get_order_seq_no_rpc_handler)
-            throw std::runtime_error(
-                "not call setExampleGetOrderSeqNoRpcCallback");
+            throw std::runtime_error("not call setExampleGetOrderSeqNoRpcCallback");
         if (!m_example_order_rpc_handler)
             throw std::runtime_error("not call setExampleOrderRpcCallback");
         if (!m_example_server_streaming_rpc_handler)
-            throw std::runtime_error(
-                "not call setExampleServerStreamingRpcCallback");
+            throw std::runtime_error("not call setExampleServerStreamingRpcCallback");
         if (!m_example_client_streaming_rpc_handler)
-            throw std::runtime_error(
-                "not call setExampleClientStreamingRpcCallback");
+            throw std::runtime_error("not call setExampleClientStreamingRpcCallback");
 #endif
     }
 
@@ -310,15 +282,9 @@ class GrpcServer final {
                 try {
                     co_await m_example_notice_rpc_handler(rpc);
                 } catch (const std::exception& e) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 } catch (...) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          "Unknown exception caught");
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -327,22 +293,13 @@ class GrpcServer final {
         agrpc::register_awaitable_rpc_handler<ExampleGetOrderSeqNoRPC>(
             grpc_context,
             *m_example_svc,
-            [this](ExampleGetOrderSeqNoRPC& rpc,
-                   fantasy::v1::GetOrderSeqNoRequest& request)
-                -> asio::awaitable<void> {
+            [this](ExampleGetOrderSeqNoRPC& rpc, fantasy::v1::GetOrderSeqNoRequest& request) -> asio::awaitable<void> {
                 try {
-                    co_await m_example_get_order_seq_no_rpc_handler(rpc,
-                                                                    request);
+                    co_await m_example_get_order_seq_no_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 } catch (...) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          "Unknown exception caught");
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -351,45 +308,29 @@ class GrpcServer final {
         agrpc::register_awaitable_rpc_handler<ExampleOrderRPC>(
             grpc_context,
             *m_example_svc,
-            [this](ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request)
-                -> asio::awaitable<void> {
+            [this](ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request) -> asio::awaitable<void> {
                 try {
                     co_await m_example_order_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 } catch (...) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          "Unknown exception caught");
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
             RethrowFirstArg{});
 
-        agrpc::register_awaitable_rpc_handler<
-            ExampleServerStreamingNotifyWhenDoneRPC>(
+        agrpc::register_awaitable_rpc_handler<ExampleServerStreamingNotifyWhenDoneRPC>(
             grpc_context,
             *m_example_svc,
             [this](ExampleServerStreamingNotifyWhenDoneRPC& rpc,
-                   ExampleServerStreamingNotifyWhenDoneRPC::Request& request)
-                -> asio::awaitable<void> {
+                   ExampleServerStreamingNotifyWhenDoneRPC::Request& request) -> asio::awaitable<void> {
                 try {
-                    co_await m_example_server_streaming_notify_when_done_rpc_handler(
-                        rpc, request);
+                    co_await m_example_server_streaming_notify_when_done_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 } catch (...) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          "Unknown exception caught");
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -402,15 +343,9 @@ class GrpcServer final {
                 try {
                     co_await m_example_client_streaming_rpc_handler(rpc);
                 } catch (const std::exception& e) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 } catch (...) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          "Unknown exception caught");
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -424,15 +359,9 @@ class GrpcServer final {
                 try {
                     co_await m_example_notice_rpc_handler(rpc);
                 } catch (const std::exception& e) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 } catch (...) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          "Unknown exception caught");
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -441,22 +370,13 @@ class GrpcServer final {
         agrpc::register_awaitable_rpc_handler<ExampleGetOrderSeqNoRPC>(
             grpc_context,
             *m_example_svc,
-            [this](ExampleGetOrderSeqNoRPC& rpc,
-                   fantasy::v1::GetOrderSeqNoRequest& request)
-                -> asio::awaitable<void> {
+            [this](ExampleGetOrderSeqNoRPC& rpc, fantasy::v1::GetOrderSeqNoRequest& request) -> asio::awaitable<void> {
                 try {
-                    co_await m_example_get_order_seq_no_rpc_handler(rpc,
-                                                                    request);
+                    co_await m_example_get_order_seq_no_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 } catch (...) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          "Unknown exception caught");
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -465,20 +385,13 @@ class GrpcServer final {
         agrpc::register_awaitable_rpc_handler<ExampleOrderRPC>(
             grpc_context,
             *m_example_svc,
-            [this](ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request)
-                -> asio::awaitable<void> {
+            [this](ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request) -> asio::awaitable<void> {
                 try {
                     co_await m_example_order_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 } catch (...) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          "Unknown exception caught");
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -487,22 +400,13 @@ class GrpcServer final {
         agrpc::register_awaitable_rpc_handler<ExampleServerStreamingRPC>(
             grpc_context,
             *m_example_svc,
-            [this](ExampleServerStreamingRPC& rpc,
-                   fantasy::v1::OrderRequest& request)
-                -> asio::awaitable<void> {
+            [this](ExampleServerStreamingRPC& rpc, fantasy::v1::OrderRequest& request) -> asio::awaitable<void> {
                 try {
-                    co_await m_example_server_streaming_rpc_handler(rpc,
-                                                                    request);
+                    co_await m_example_server_streaming_rpc_handler(rpc, request);
                 } catch (const std::exception& e) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 } catch (...) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          "Unknown exception caught");
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -515,15 +419,9 @@ class GrpcServer final {
                 try {
                     co_await m_example_client_streaming_rpc_handler(rpc);
                 } catch (const std::exception& e) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          e.what());
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
                 } catch (...) {
-                    m_log(LogLevel::Error,
-                          extractFilename(__FILE__),
-                          __LINE__,
-                          "Unknown exception caught");
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
                 }
                 co_return;
             },
@@ -533,35 +431,26 @@ class GrpcServer final {
     }
 
     GrpcServerConfig m_config;
-    std::function<void(LogLevel, std::string_view, int, std::string)> m_log =
-        [](auto, auto, auto, auto) {};
+    std::function<void(LogLevel, std::string_view, int, std::string)> m_log = [](auto, auto, auto, auto) {};
     std::function<void(grpc::ServerBuilder&)> m_add_channel_argument;
 
-    std::function<asio::awaitable<void>(ExampleNoticeRPC&)>
-        m_example_notice_rpc_handler;
-    std::function<asio::awaitable<void>(ExampleGetOrderSeqNoRPC&,
-                                        fantasy::v1::GetOrderSeqNoRequest&)>
+    std::function<asio::awaitable<void>(ExampleNoticeRPC&)> m_example_notice_rpc_handler;
+    std::function<asio::awaitable<void>(ExampleGetOrderSeqNoRPC&, fantasy::v1::GetOrderSeqNoRequest&)>
         m_example_get_order_seq_no_rpc_handler;
-    std::function<asio::awaitable<void>(ExampleOrderRPC&,
-                                        fantasy::v1::OrderRequest&)>
-        m_example_order_rpc_handler;
-    std::function<asio::awaitable<void>(ExampleServerStreamingRPC&,
-                                        fantasy::v1::OrderRequest&)>
+    std::function<asio::awaitable<void>(ExampleOrderRPC&, fantasy::v1::OrderRequest&)> m_example_order_rpc_handler;
+    std::function<asio::awaitable<void>(ExampleServerStreamingRPC&, fantasy::v1::OrderRequest&)>
         m_example_server_streaming_rpc_handler;
 
-    std::function<asio::awaitable<void>(ExampleClientStreamingRPC&)>
-        m_example_client_streaming_rpc_handler;
+    std::function<asio::awaitable<void>(ExampleClientStreamingRPC&)> m_example_client_streaming_rpc_handler;
 #if USE_GRPC_NOTIFY_WHEN_DONE
 
-    std::function<asio::awaitable<void>(
-        ExampleServerStreamingNotifyWhenDoneRPC&,
-        ExampleServerStreamingNotifyWhenDoneRPC::Request&)>
+    std::function<asio::awaitable<void>(ExampleServerStreamingNotifyWhenDoneRPC&,
+                                        ExampleServerStreamingNotifyWhenDoneRPC::Request&)>
         m_example_server_streaming_notify_when_done_rpc_handler;
 
 #endif
 
-    std::function<std::shared_ptr<grpc::ServerCredentials>()>
-        m_create_server_credentials;
+    std::function<std::shared_ptr<grpc::ServerCredentials>()> m_create_server_credentials;
     std::unique_ptr<fantasy::v1::Example::AsyncService> m_example_svc;
     std::unique_ptr<grpc::Server> m_server_ptr;
     std::vector<std::shared_ptr<agrpc::GrpcContext>> m_grpc_contexts;

@@ -21,30 +21,22 @@ std::string toJson(auto& request) {
     options.add_whitespace = true;
     options.always_print_fields_with_no_presence = true;
     std::string json_output;
-    absl::Status ret = google::protobuf::util::MessageToJsonString(request,
-                                                                   &json_output,
-                                                                   options);
+    absl::Status ret = google::protobuf::util::MessageToJsonString(request, &json_output, options);
     return json_output;
 }
 
 struct Handler {
     asio::awaitable<void> procNotice(peak::ExampleNoticeRPC& rpc);
-    asio::awaitable<void> procGetOrderSeqNo(
-        peak::ExampleGetOrderSeqNoRPC& rpc,
-        fantasy::v1::GetOrderSeqNoRequest& request);
-    asio::awaitable<void> procOrder(peak::ExampleOrderRPC& rpc,
-                                    fantasy::v1::OrderRequest& request);
+    asio::awaitable<void> procGetOrderSeqNo(peak::ExampleGetOrderSeqNoRPC& rpc,
+                                            fantasy::v1::GetOrderSeqNoRequest& request);
+    asio::awaitable<void> procOrder(peak::ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request);
 #if USE_GRPC_NOTIFY_WHEN_DONE
-    asio::awaitable<void> procServerStreaming(
-        peak::ExampleServerStreamingNotifyWhenDoneRPC& rpc,
-        peak::ExampleServerStreamingNotifyWhenDoneRPC::Request& request);
+    asio::awaitable<void> procServerStreaming(peak::ExampleServerStreamingNotifyWhenDoneRPC& rpc,
+                                              peak::ExampleServerStreamingNotifyWhenDoneRPC::Request& request);
 #else
-    asio::awaitable<void> procServerStreaming(
-        peak::ExampleServerStreamingRPC& rpc,
-        fantasy::v1::OrderRequest& request);
+    asio::awaitable<void> procServerStreaming(peak::ExampleServerStreamingRPC& rpc, fantasy::v1::OrderRequest& request);
 #endif
-    asio::awaitable<void> procClientStreaming(
-        peak::ExampleClientStreamingRPC& rpc);
+    asio::awaitable<void> procClientStreaming(peak::ExampleClientStreamingRPC& rpc);
 };
 
 asio::awaitable<void> Handler::procNotice(peak::ExampleNoticeRPC& rpc) {
@@ -57,18 +49,15 @@ asio::awaitable<void> Handler::procNotice(peak::ExampleNoticeRPC& rpc) {
     co_return;
 }
 
-asio::awaitable<void> Handler::procGetOrderSeqNo(
-    peak::ExampleGetOrderSeqNoRPC& rpc,
-    fantasy::v1::GetOrderSeqNoRequest& request) {
-    spdlog::info("unary-rpc, procGetOrderSeqNo ExampleGetOrderSeqNo => {}",
-                 toJson(request));
+asio::awaitable<void> Handler::procGetOrderSeqNo(peak::ExampleGetOrderSeqNoRPC& rpc,
+                                                 fantasy::v1::GetOrderSeqNoRequest& request) {
+    spdlog::info("unary-rpc, procGetOrderSeqNo ExampleGetOrderSeqNo => {}", toJson(request));
     fantasy::v1::GetOrderSeqNoResponse response;
     co_await rpc.finish(response, grpc::Status::OK);
     co_return;
 }
 
-asio::awaitable<void> Handler::procOrder(peak::ExampleOrderRPC& rpc,
-                                         fantasy::v1::OrderRequest& request) {
+asio::awaitable<void> Handler::procOrder(peak::ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request) {
     spdlog::info("unary-rpc, procOrder ExampleOrder => {}", toJson(request));
     fantasy::v1::OrderResponse response;
     co_await rpc.finish(response, grpc::Status::OK);
@@ -76,13 +65,10 @@ asio::awaitable<void> Handler::procOrder(peak::ExampleOrderRPC& rpc,
 }
 
 #if USE_GRPC_NOTIFY_WHEN_DONE
-asio::awaitable<void> Handler::procServerStreaming(
-    peak::ExampleServerStreamingNotifyWhenDoneRPC& rpc,
-    peak::ExampleServerStreamingNotifyWhenDoneRPC::Request& request) {
-    spdlog::info(
-        "USE_GRPC_NOTIFY_WHEN_DONE server-streaming-rpc, procServerStreaming "
-        "ExampleServerStreaming => {}",
-        toJson(request));
+asio::awaitable<void> Handler::procServerStreaming(peak::ExampleServerStreamingNotifyWhenDoneRPC& rpc,
+                                                   peak::ExampleServerStreamingNotifyWhenDoneRPC::Request& request) {
+    spdlog::info("USE_GRPC_NOTIFY_WHEN_DONE server-streaming-rpc, procServerStreaming ExampleServerStreaming => {}",
+                 toJson(request));
     peak::ExampleServerStreamingNotifyWhenDoneRPC::Response response;
     if (!co_await rpc.write(response)) {
         co_return;
@@ -91,12 +77,9 @@ asio::awaitable<void> Handler::procServerStreaming(
     while (true) {
         const auto [completion_order, wait_ok, ec] =
             co_await asio::experimental::make_parallel_group(
-                alarm.wait(std::chrono::system_clock::now() +
-                               std::chrono::seconds(30),
-                           asio::deferred),
+                alarm.wait(std::chrono::system_clock::now() + std::chrono::seconds(30), asio::deferred),
                 rpc.wait_for_done(asio::deferred))
-                .async_wait(asio::experimental::wait_for_one(),
-                            asio::use_awaitable);
+                .async_wait(asio::experimental::wait_for_one(), asio::use_awaitable);
         if (completion_order[0] == 0) {
             // alarm completed, send the next message to the client:
             if (!co_await rpc.write(response)) {
@@ -104,23 +87,17 @@ asio::awaitable<void> Handler::procServerStreaming(
             }
         } else {
             // wait_for_done completed, IsCancelled can now be called:
-            spdlog::info(
-                "ServerRPC: Server streaming notify_when_done was successfully "
-                "cancelled: {}",
-                rpc.context().IsCancelled());
+            spdlog::info("ServerRPC: Server streaming notify_when_done was successfully cancelled: {}",
+                         rpc.context().IsCancelled());
             co_return;
         }
     }
     co_return;
 }
 #else
-asio::awaitable<void> Handler::procServerStreaming(
-    peak::ExampleServerStreamingRPC& rpc,
-    fantasy::v1::OrderRequest& request) {
-    spdlog::info(
-        "server-streaming-rpc, procServerStreaming ExampleServerStreaming => "
-        "{}",
-        toJson(request));
+asio::awaitable<void> Handler::procServerStreaming(peak::ExampleServerStreamingRPC& rpc,
+                                                   fantasy::v1::OrderRequest& request) {
+    spdlog::info("server-streaming-rpc, procServerStreaming ExampleServerStreaming => {}", toJson(request));
     fantasy::v1::OrderResponse response;
     auto ret = co_await rpc.write(response);
     co_await rpc.finish(grpc::Status::OK);
@@ -128,8 +105,7 @@ asio::awaitable<void> Handler::procServerStreaming(
 }
 #endif
 
-asio::awaitable<void> Handler::procClientStreaming(
-    peak::ExampleClientStreamingRPC& rpc) {
+asio::awaitable<void> Handler::procClientStreaming(peak::ExampleClientStreamingRPC& rpc) {
     spdlog::info("client-streaming-rpc => {}", "ExampleClientStreaming");
     // Optionally send initial metadata first.
     if (!co_await rpc.send_initial_metadata()) {
@@ -140,8 +116,7 @@ asio::awaitable<void> Handler::procClientStreaming(
     bool read_ok;
     do {
         fantasy::v1::OrderRequest request;
-        // Read from the client stream until the client has signaled
-        // `writes_done`.
+        // Read from the client stream until the client has signaled `writes_done`.
         read_ok = co_await rpc.read(request);
     } while (read_ok);
 
@@ -165,33 +140,23 @@ int main() {
         .enable_grpc_health_check = true,
     };
     auto grpc_server = peak::GrpcServer::create(config);
-    grpc_server->setAddChannelArgumentCallback([](grpc::ServerBuilder&) {
-        spdlog::info("setAddChannelArgumentCallback");
-    });
+    grpc_server->setAddChannelArgumentCallback(
+        [](grpc::ServerBuilder&) { spdlog::info("setAddChannelArgumentCallback"); });
     grpc_server->setLogCallback([](auto level, auto file, auto line, auto msg) {
-        spdlog::info("level: {}, file: {}, line: {}, msg: {}",
-                     peak::GrpcServer::toString(level),
-                     file,
-                     line,
-                     msg);
+        spdlog::info("level: {}, file: {}, line: {}, msg: {}", peak::GrpcServer::toString(level), file, line, msg);
     });
     using namespace grpc_auto_gen;
     Handler handler;
-    grpc_server->setExampleNoticeRpcCallback(
-        std::bind_front(&Handler::procNotice, handler));
-    grpc_server->setExampleGetOrderSeqNoRpcCallback(
-        std::bind_front(&Handler::procGetOrderSeqNo, handler));
-    grpc_server->setExampleOrderRpcCallback(
-        std::bind_front(&Handler::procOrder, handler));
+    grpc_server->setExampleNoticeRpcCallback(std::bind_front(&Handler::procNotice, handler));
+    grpc_server->setExampleGetOrderSeqNoRpcCallback(std::bind_front(&Handler::procGetOrderSeqNo, handler));
+    grpc_server->setExampleOrderRpcCallback(std::bind_front(&Handler::procOrder, handler));
 #if USE_GRPC_NOTIFY_WHEN_DONE
     grpc_server->setExampleServerStreamingNotifyWhenDoneRpcCallback(
         std::bind_front(&Handler::procServerStreaming, handler));
 #else
-    grpc_server->setExampleServerStreamingRpcCallback(
-        std::bind_front(&Handler::procServerStreaming, handler));
+    grpc_server->setExampleServerStreamingRpcCallback(std::bind_front(&Handler::procServerStreaming, handler));
 #endif
-    grpc_server->setExampleClientStreamingRpcCallback(
-        std::bind_front(&Handler::procClientStreaming, handler));
+    grpc_server->setExampleClientStreamingRpcCallback(std::bind_front(&Handler::procClientStreaming, handler));
     grpc_server->start();
     std::this_thread::sleep_for(std::chrono::seconds(5000));
     grpc_server->stop();

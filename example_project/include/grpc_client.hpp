@@ -49,9 +49,7 @@ namespace peak_utils {
 consteval std::string_view extractFilename(const char* path) {
     std::string_view path_view{path};
     std::size_t last_slash = path_view.find_last_of("/\\");
-    return (last_slash == std::string_view::npos)
-               ? path_view
-               : path_view.substr(last_slash + 1);
+    return (last_slash == std::string_view::npos) ? path_view : path_view.substr(last_slash + 1);
 }
 }  // namespace peak_utils
 
@@ -83,30 +81,25 @@ class RoundRobin {
 // Helper struct to manage GrpcContext lifetime
 struct GuardedGrpcContext {
     agrpc::GrpcContext context;
-    asio::executor_work_guard<agrpc::GrpcContext::executor_type> guard{
-        context.get_executor()};
+    asio::executor_work_guard<agrpc::GrpcContext::executor_type> guard{context.get_executor()};
 };
 
 class GrpcClient final {
   public:
     GrpcClient(const std::string& host, size_t thread_count = 4) {
-        m_stub = fantasy::v1::Example::NewStub(
-            grpc::CreateChannel(std::string(host),
-                                grpc::InsecureChannelCredentials()));
+        m_stub =
+            fantasy::v1::Example::NewStub(grpc::CreateChannel(std::string(host), grpc::InsecureChannelCredentials()));
 
         for (size_t i = 0; i < thread_count; ++i) {
-            m_grpc_contexts.emplace_back(
-                std::make_unique<GuardedGrpcContext>());
+            m_grpc_contexts.emplace_back(std::make_unique<GuardedGrpcContext>());
         }
         m_threads.reserve(thread_count);
         for (size_t i = 0; i < thread_count; ++i) {
-            m_threads.emplace_back(
-                [this, i] { m_grpc_contexts[i]->context.run(); });
+            m_threads.emplace_back([this, i] { m_grpc_contexts[i]->context.run(); });
         }
 
         m_round_robin =
-            std::make_unique<RoundRobin<decltype(m_grpc_contexts.begin())>>(
-                m_grpc_contexts.begin(), thread_count);
+            std::make_unique<RoundRobin<decltype(m_grpc_contexts.begin())>>(m_grpc_contexts.begin(), thread_count);
     }
 
     ~GrpcClient() {
@@ -139,100 +132,73 @@ class GrpcClient final {
         m_log = std::move(cb);
     }
 
-    void notice(
-        std::function<asio::awaitable<void>(agrpc::GrpcContext&,
-                                            fantasy::v1::Example::Stub&)>
-            handler) {
+    void notice(std::function<asio::awaitable<void>(agrpc::GrpcContext&, fantasy::v1::Example::Stub&)> handler) {
         auto& grpc_context = m_round_robin->next()->context;
         asio::co_spawn(
             grpc_context,
-            [](auto& grpc_context, auto& stub, auto handler, auto self)
-                -> asio::awaitable<void> {
+            [](auto& grpc_context, auto& stub, auto handler, auto self) -> asio::awaitable<void> {
                 try {
                     co_await handler(grpc_context, stub);
                 } catch (const std::exception& e) {
-                    self->m_log(peak_utils::extractFilename(__FILE__),
-                                __LINE__,
-                                e.what());
+                    self->m_log(peak_utils::extractFilename(__FILE__), __LINE__, e.what());
                 }
             }(grpc_context, *m_stub, std::move(handler), this),
             asio::detached);
     }
 
-    void getOrderSeqNo(
-        std::function<asio::awaitable<void>(agrpc::GrpcContext&,
-                                            fantasy::v1::Example::Stub&)>
-            handler) {
+    void getOrderSeqNo(std::function<asio::awaitable<void>(agrpc::GrpcContext&, fantasy::v1::Example::Stub&)> handler) {
         auto& grpc_context = m_round_robin->next()->context;
         asio::co_spawn(
             grpc_context,
-            [](auto& grpc_context, auto& stub, auto handler, auto self)
-                -> asio::awaitable<void> {
+            [](auto& grpc_context, auto& stub, auto handler, auto self) -> asio::awaitable<void> {
                 try {
                     co_await handler(grpc_context, stub);
                 } catch (const std::exception& e) {
-                    self->m_log(peak_utils::extractFilename(__FILE__),
-                                __LINE__,
-                                e.what());
+                    self->m_log(peak_utils::extractFilename(__FILE__), __LINE__, e.what());
                 }
             }(grpc_context, *m_stub, std::move(handler), this),
             asio::detached);
     }
 
-    void order(std::function<asio::awaitable<void>(agrpc::GrpcContext&,
-                                                   fantasy::v1::Example::Stub&)>
-                   handler) {
+    void order(std::function<asio::awaitable<void>(agrpc::GrpcContext&, fantasy::v1::Example::Stub&)> handler) {
         auto& grpc_context = m_round_robin->next()->context;
         asio::co_spawn(
             grpc_context,
-            [](auto& grpc_context, auto& stub, auto handler, auto self)
-                -> asio::awaitable<void> {
+            [](auto& grpc_context, auto& stub, auto handler, auto self) -> asio::awaitable<void> {
                 try {
                     co_await handler(grpc_context, stub);
                 } catch (const std::exception& e) {
-                    self->m_log(peak_utils::extractFilename(__FILE__),
-                                __LINE__,
-                                e.what());
+                    self->m_log(peak_utils::extractFilename(__FILE__), __LINE__, e.what());
                 }
             }(grpc_context, *m_stub, std::move(handler), this),
             asio::detached);
     }
 
     void serverStreaming(
-        std::function<asio::awaitable<void>(agrpc::GrpcContext&,
-                                            fantasy::v1::Example::Stub&)>
-            handler) {
+        std::function<asio::awaitable<void>(agrpc::GrpcContext&, fantasy::v1::Example::Stub&)> handler) {
         auto& grpc_context = m_round_robin->next()->context;
         asio::co_spawn(
             grpc_context,
-            [](auto& grpc_context, auto& stub, auto handler, auto self)
-                -> asio::awaitable<void> {
+            [](auto& grpc_context, auto& stub, auto handler, auto self) -> asio::awaitable<void> {
                 try {
                     co_await handler(grpc_context, stub);
                 } catch (const std::exception& e) {
-                    self->m_log(peak_utils::extractFilename(__FILE__),
-                                __LINE__,
-                                e.what());
+                    self->m_log(peak_utils::extractFilename(__FILE__), __LINE__, e.what());
                 }
             }(grpc_context, *m_stub, std::move(handler), this),
             asio::detached);
     }
 
     void clientStreaming(
-        std::function<asio::awaitable<void>(agrpc::GrpcContext&,
-                                            fantasy::v1::Example::Stub&)>
-            handler) {
+        std::function<asio::awaitable<void>(agrpc::GrpcContext&, fantasy::v1::Example::Stub&)> handler) {
         auto& grpc_context = m_round_robin->next()->context;
         asio::co_spawn(
             grpc_context,
-            [](auto& grpc_context, auto& stub, auto handler, auto self)
-                -> asio::awaitable<void> {
+            [](auto& grpc_context, auto& stub, auto handler, auto self) -> asio::awaitable<void> {
                 try {
                     co_await handler(grpc_context, stub);
                 } catch (const std::exception& e) {
-                    self->m_log(peak_utils::extractFilename(__FILE__),
-                                __LINE__,
-                                e.what());
+                    self->m_log(peak_utils::extractFilename(__FILE__), __LINE__, e.what());
                 }
             }(grpc_context, *m_stub, std::move(handler), this),
             asio::detached);
@@ -242,9 +208,7 @@ class GrpcClient final {
     std::unique_ptr<fantasy::v1::Example::Stub> m_stub;
     std::vector<std::unique_ptr<GuardedGrpcContext>> m_grpc_contexts;
     std::vector<std::thread> m_threads;
-    std::unique_ptr<RoundRobin<decltype(m_grpc_contexts.begin())>>
-        m_round_robin;
-    std::function<void(std::string_view, int, std::string)> m_log =
-        [](auto, auto, auto) {};
+    std::unique_ptr<RoundRobin<decltype(m_grpc_contexts.begin())>> m_round_robin;
+    std::function<void(std::string_view, int, std::string)> m_log = [](auto, auto, auto) {};
 };
 }  // namespace peak
