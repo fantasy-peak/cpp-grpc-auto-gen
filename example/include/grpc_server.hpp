@@ -19,21 +19,13 @@
 
 #ifdef AGRPC_BOOST_ASIO
 #include <boost/asio.hpp>
-#include <boost/asio/awaitable.hpp>
-#include <boost/asio/detached.hpp>
 #include <boost/asio/experimental/awaitable_operators.hpp>
 #include <boost/asio/experimental/concurrent_channel.hpp>
-#include <boost/asio/post.hpp>
-#include <boost/asio/use_awaitable.hpp>
 #include <boost/system/detail/error_code.hpp>
 #else
 #include <asio.hpp>
-#include <asio/awaitable.hpp>
-#include <asio/detached.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/experimental/concurrent_channel.hpp>
-#include <asio/post.hpp>
-#include <asio/use_awaitable.hpp>
 #include <system/detail/error_code.hpp>
 #endif
 
