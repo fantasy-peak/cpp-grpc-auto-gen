@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 #include <optional>
+#include <unordered_map>
 
 #ifdef AGRPC_BOOST_ASIO
 #include <boost/asio.hpp>
@@ -240,33 +241,26 @@ class GrpcServer final {
     };
 
     void checkCallback() {
+        std::unordered_map<std::string, bool> handlers = {
+            {"not call setExampleNoticeRpcCallback", (bool)m_example_notice_rpc_handler},
+            {"not call setExampleGetOrderSeqNoRpcCallback", (bool)m_example_get_order_seq_no_rpc_handler},
+            {"not call setExampleOrderRpcCallback", (bool)m_example_order_rpc_handler},
 #if USE_GRPC_NOTIFY_WHEN_DONE
-        if (!m_example_notice_rpc_handler)
-            throw std::runtime_error("not call setExampleNoticeRpcCallback");
-        if (!m_example_get_order_seq_no_rpc_handler)
-            throw std::runtime_error("not call setExampleGetOrderSeqNoRpcCallback");
-        if (!m_example_order_rpc_handler)
-            throw std::runtime_error("not call setExampleOrderRpcCallback");
-        if (!m_example_server_streaming_notify_when_done_rpc_handler)
-            throw std::runtime_error("not call setExampleServerStreamingNotifyWhenDoneRpcCallback");
-        if (!m_example_client_streaming_rpc_handler)
-            throw std::runtime_error("not call setExampleClientStreamingRpcCallback");
+            {"not call setExampleServerStreamingNotifyWhenDoneRpcCallback",
+             (bool)m_example_server_streaming_notify_when_done_rpc_handler},
 #else
-        if (!m_example_notice_rpc_handler)
-            throw std::runtime_error("not call setExampleNoticeRpcCallback");
-        if (!m_example_get_order_seq_no_rpc_handler)
-            throw std::runtime_error("not call setExampleGetOrderSeqNoRpcCallback");
-        if (!m_example_order_rpc_handler)
-            throw std::runtime_error("not call setExampleOrderRpcCallback");
-        if (!m_example_server_streaming_rpc_handler)
-            throw std::runtime_error("not call setExampleServerStreamingRpcCallback");
-        if (!m_example_client_streaming_rpc_handler)
-            throw std::runtime_error("not call setExampleClientStreamingRpcCallback");
+            {"not call setExampleServerStreamingRpcCallback", (bool)m_example_server_streaming_rpc_handler},
 #endif
+            {"not call setExampleClientStreamingRpcCallback", (bool)m_example_client_streaming_rpc_handler},
+        };
+        for (auto& [str, flag] : handlers) {
+            if (!flag) {
+                throw std::runtime_error(str);
+            }
+        }
     }
 
     void registerHandler(auto& grpc_context) {
-#if USE_GRPC_NOTIFY_WHEN_DONE
         agrpc::register_awaitable_rpc_handler<ExampleNoticeRPC>(
             grpc_context,
             *m_example_svc,
@@ -312,6 +306,7 @@ class GrpcServer final {
             },
             RethrowFirstArg{});
 
+#if USE_GRPC_NOTIFY_WHEN_DONE
         agrpc::register_awaitable_rpc_handler<ExampleServerStreamingNotifyWhenDoneRPC>(
             grpc_context,
             *m_example_svc,
@@ -327,68 +322,7 @@ class GrpcServer final {
                 co_return;
             },
             RethrowFirstArg{});
-
-        agrpc::register_awaitable_rpc_handler<ExampleClientStreamingRPC>(
-            grpc_context,
-            *m_example_svc,
-            [this](ExampleClientStreamingRPC& rpc) -> asio::awaitable<void> {
-                try {
-                    co_await m_example_client_streaming_rpc_handler(rpc);
-                } catch (const std::exception& e) {
-                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
-                } catch (...) {
-                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
-                }
-                co_return;
-            },
-            RethrowFirstArg{});
 #else
-
-        agrpc::register_awaitable_rpc_handler<ExampleNoticeRPC>(
-            grpc_context,
-            *m_example_svc,
-            [this](ExampleNoticeRPC& rpc) -> asio::awaitable<void> {
-                try {
-                    co_await m_example_notice_rpc_handler(rpc);
-                } catch (const std::exception& e) {
-                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
-                } catch (...) {
-                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
-                }
-                co_return;
-            },
-            RethrowFirstArg{});
-
-        agrpc::register_awaitable_rpc_handler<ExampleGetOrderSeqNoRPC>(
-            grpc_context,
-            *m_example_svc,
-            [this](ExampleGetOrderSeqNoRPC& rpc, fantasy::v1::GetOrderSeqNoRequest& request) -> asio::awaitable<void> {
-                try {
-                    co_await m_example_get_order_seq_no_rpc_handler(rpc, request);
-                } catch (const std::exception& e) {
-                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
-                } catch (...) {
-                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
-                }
-                co_return;
-            },
-            RethrowFirstArg{});
-
-        agrpc::register_awaitable_rpc_handler<ExampleOrderRPC>(
-            grpc_context,
-            *m_example_svc,
-            [this](ExampleOrderRPC& rpc, fantasy::v1::OrderRequest& request) -> asio::awaitable<void> {
-                try {
-                    co_await m_example_order_rpc_handler(rpc, request);
-                } catch (const std::exception& e) {
-                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
-                } catch (...) {
-                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
-                }
-                co_return;
-            },
-            RethrowFirstArg{});
-
         agrpc::register_awaitable_rpc_handler<ExampleServerStreamingRPC>(
             grpc_context,
             *m_example_svc,
@@ -403,6 +337,7 @@ class GrpcServer final {
                 co_return;
             },
             RethrowFirstArg{});
+#endif
 
         agrpc::register_awaitable_rpc_handler<ExampleClientStreamingRPC>(
             grpc_context,
@@ -418,8 +353,6 @@ class GrpcServer final {
                 co_return;
             },
             RethrowFirstArg{});
-
-#endif
     }
 
     GrpcServerConfig m_config;

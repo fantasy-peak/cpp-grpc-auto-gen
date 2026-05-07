@@ -47,7 +47,7 @@ jobs:
           rm -rf example_project
           ls -lrt
           export PATH=/$HOME/.xmake/packages/p/protobuf-cpp/33.2/b3738b6a93ec47949689248d7fcccfaa/bin:$PATH
-          python3 proto2yaml.py example/example.proto \
+          python3 proto2yaml.py proto/example.proto \
               --namespace peak \
               --server_class_name GrpcServer \
               --client_class_name GrpcClient \

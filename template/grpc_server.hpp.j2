@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 #include <optional>
+#include <unordered_map>
 
 #ifdef AGRPC_BOOST_ASIO
 #include <boost/asio.hpp>
@@ -241,34 +242,33 @@ private:
     };
 
     void checkCallback() {
-#if USE_GRPC_NOTIFY_WHEN_DONE
+        std::unordered_map<std::string, bool> handlers = {
         {%- for service_name in grpc.interface -%}
         {% for interface in grpc.interface[service_name] %}
         {% if interface.type=='server-streaming-rpc' -%}
-            if (!m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler)
-                throw std::runtime_error("not call set{{service_name}}{{interface.name}}NotifyWhenDoneRpcCallback");
+            #if USE_GRPC_NOTIFY_WHEN_DONE
+                {"not call set{{service_name}}{{interface.name}}NotifyWhenDoneRpcCallback", (bool)m_{{service_name|to_snake}}_{{interface.name|to_snake}}_notify_when_done_rpc_handler},
+            #else
+                {"not call set{{service_name}}{{interface.name}}RpcCallback", (bool)m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler},
+            #endif
         {%- else -%}
-            if (!m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler)
-                throw std::runtime_error("not call set{{service_name}}{{interface.name}}RpcCallback");
+            {"not call set{{service_name}}{{interface.name}}RpcCallback", (bool)m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler},
         {%- endif -%}
         {% endfor %}
         {% endfor -%}
-#else
-        {% for service_name in grpc.interface -%}
-        {% for interface in grpc.interface[service_name] -%}
-            if (!m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler)
-                throw std::runtime_error("not call set{{service_name}}{{interface.name}}RpcCallback");
-        {% endfor -%}
-        {% endfor -%}
-#endif
+        };
+        for (auto& [str, flag] : handlers) {
+            if (!flag) {
+                throw std::runtime_error(str);
+            }
+        }
     }
 
     void registerHandler(auto& grpc_context) {
-#if USE_GRPC_NOTIFY_WHEN_DONE
         {%- for service_name in grpc.interface -%}
         {%- for interface in grpc.interface[service_name] -%}
         {% if interface.type=='server-streaming-rpc' %}
-
+#if USE_GRPC_NOTIFY_WHEN_DONE
         agrpc::register_awaitable_rpc_handler<
             {{service_name}}{{interface.name}}NotifyWhenDoneRPC>(
             grpc_context,
@@ -285,7 +285,22 @@ private:
                 co_return;
             },
             RethrowFirstArg{});
-        
+#else
+        agrpc::register_awaitable_rpc_handler<{{service_name}}{{interface.name}}RPC>(
+            grpc_context,
+            *m_{{service_name|to_snake}}_svc,
+            [this]({{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) -> asio::awaitable<void> {
+                try {
+                    co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc, request);
+                } catch (const std::exception& e) {
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
+                } catch (...) {
+                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
+                }
+                co_return;
+            },
+            RethrowFirstArg{});
+#endif
         {% elif interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' %}
         agrpc::register_awaitable_rpc_handler<{{service_name}}{{interface.name}}RPC>(
             grpc_context,
@@ -319,43 +334,6 @@ private:
         {% endif -%}
         {%- endfor -%}
         {%- endfor -%}
-#else
-        {%- for service_name in grpc.interface -%}
-        {% for interface in grpc.interface[service_name] %}
-        {% if interface.type=='bidirectional-streaming-rpc' or interface.type=='client-streaming-rpc' %}
-        agrpc::register_awaitable_rpc_handler<{{service_name}}{{interface.name}}RPC>(
-            grpc_context,
-            *m_{{service_name|to_snake}}_svc,
-            [this]({{service_name}}{{interface.name}}RPC& rpc) -> asio::awaitable<void> {
-                try {
-                    co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc);
-                } catch (const std::exception& e) {
-                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
-                } catch (...) {
-                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
-                }
-                co_return;
-            },
-            RethrowFirstArg{});
-        {% else -%}
-        agrpc::register_awaitable_rpc_handler<{{service_name}}{{interface.name}}RPC>(
-            grpc_context,
-            *m_{{service_name|to_snake}}_svc,
-            [this]({{service_name}}{{interface.name}}RPC& rpc, {{grpc.package}}::{{interface.input}}& request) -> asio::awaitable<void> {
-                try {
-                    co_await m_{{service_name|to_snake}}_{{interface.name|to_snake}}_rpc_handler(rpc, request);
-                } catch (const std::exception& e) {
-                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, e.what());
-                } catch (...) {
-                    m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Unknown exception caught");
-                }
-                co_return;
-            },
-            RethrowFirstArg{});
-        {% endif -%}
-        {% endfor %}
-        {% endfor %}
-#endif
     }
 
     {{grpc.server_class_name}}Config m_config;
