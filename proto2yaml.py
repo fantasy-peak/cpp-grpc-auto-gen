@@ -73,7 +73,7 @@ def parse_proto_descriptor(desc_file):
 
 def generate_yaml(services, extra_data):
     proto_files = extra_data.get("proto_files", [])
-    proto_files.append("example/health.proto")
+    proto_files.append("proto/health.proto")
     yaml_dict = {
         "namespace": extra_data.get("namespace", ""),
         "server_class_name": extra_data.get("server_class_name", ""),

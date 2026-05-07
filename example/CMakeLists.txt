@@ -47,10 +47,7 @@ endif ()
 
 add_compile_options(
   # -Werror
-  -pedantic-errors
   -O2
-  -Wall
-  -Wextra
   -Wno-missing-field-initializers
   -Wformat
   -Wfloat-equal
@@ -67,8 +64,10 @@ add_definitions(-DAGRPC_BOOST_ASIO=1)
 file(GLOB_RECURSE SRCS src/server.cpp)
 add_executable(grpc-server ${SRCS})
 target_include_directories(grpc-server BEFORE PUBLIC ${CMAKE_SOURCE_DIR}/include)
+
 target_add_protobuf(grpc-server example.proto)
 target_add_protobuf(grpc-server health.proto)
+
 target_link_libraries(grpc-server PUBLIC asan Boost::asio Boost::circular_buffer Boost::signals2 ssl crypto asio-grpc spdlog::spdlog Boost::interprocess
                                     pthread dl)
 

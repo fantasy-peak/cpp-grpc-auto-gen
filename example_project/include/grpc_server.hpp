@@ -26,11 +26,11 @@
 #include <asio.hpp>
 #include <asio/experimental/awaitable_operators.hpp>
 #include <asio/experimental/concurrent_channel.hpp>
-#include <system/detail/error_code.hpp>
 #endif
 
 #include <example.grpc.pb.h>
 #include <example.pb.h>
+
 #include <health.grpc.pb.h>
 #include <health.pb.h>
 
@@ -138,9 +138,9 @@ class GrpcServer final {
                              m_config.http2_min_sent_ping_interval_without_data_ms);
         add_channel_argument(GRPC_ARG_HTTP2_MIN_RECV_PING_INTERVAL_WITHOUT_DATA_MS,
                              m_config.http2_min_recv_ping_interval_without_data_ms);
-        if (m_add_channel_argument)
+        if (m_add_channel_argument) {
             m_add_channel_argument(builder);
-
+        }
         if (m_config.enable_grpc_health_check) {
             agrpc::add_health_check_service(builder);
             m_server_ptr = builder.BuildAndStart();
