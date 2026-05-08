@@ -103,8 +103,11 @@ class GrpcServer final {
         return (last_slash == std::string_view::npos) ? path_view : path_view.substr(last_slash + 1);
     }
 
-    void start() {
-        checkCallback();
+    [[nodiscard]] std::tuple<bool, std::string> start(bool reuseport = true) {
+        auto [ret, error] = checkCallback();
+        if (!ret) {
+            return std::make_tuple(false, error);
+        }
         grpc::ServerBuilder builder;
         for (int i = 0; i < m_config.thread_count; i++) {
             m_grpc_contexts.emplace_back(std::make_shared<agrpc::GrpcContext>(builder.AddCompletionQueue()));
@@ -112,6 +115,7 @@ class GrpcServer final {
         auto creds = grpc::InsecureServerCredentials();
         if (m_create_server_credentials)
             creds = m_create_server_credentials();
+        builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, reuseport ? 1 : 0);
         builder.AddListeningPort(m_config.addr_uri, creds);
 #ifdef OPEN_GRPC_REFLECTION_PLUGIN
         m_log(LogLevel::Info, extractFilename(__FILE__), __LINE__, "call InitProtoReflectionServerBuilderPlugin");
@@ -145,10 +149,18 @@ class GrpcServer final {
         if (m_config.enable_grpc_health_check) {
             agrpc::add_health_check_service(builder);
             m_server_ptr = builder.BuildAndStart();
+            if (m_server_ptr == nullptr) {
+                m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Failed to start server.");
+                return std::make_tuple(false, "Failed to start server.");
+            }
             m_log(LogLevel::Info, extractFilename(__FILE__), __LINE__, "start_health_check_service");
             agrpc::start_health_check_service(*m_server_ptr, *m_grpc_contexts[0]);
         } else {
             m_server_ptr = builder.BuildAndStart();
+            if (m_server_ptr == nullptr) {
+                m_log(LogLevel::Error, extractFilename(__FILE__), __LINE__, "Failed to start server.");
+                return std::make_tuple(false, "Failed to start server.");
+            }
         }
         for (int32_t i = 0; i < m_config.thread_count; ++i) {
             m_threads.emplace_back([this, i] {
@@ -157,6 +169,7 @@ class GrpcServer final {
                 grpc_context.run();
             });
         }
+        return std::make_tuple(true, "ok");
     }
 
     void stop() {
@@ -240,7 +253,7 @@ class GrpcServer final {
         }
     };
 
-    void checkCallback() {
+    std::tuple<bool, std::string> checkCallback() {
         std::unordered_map<std::string, bool> handlers = {
             {"not call setExampleNoticeRpcCallback", (bool)m_example_notice_rpc_handler},
             {"not call setExampleGetOrderSeqNoRpcCallback", (bool)m_example_get_order_seq_no_rpc_handler},
@@ -255,9 +268,10 @@ class GrpcServer final {
         };
         for (auto& [str, flag] : handlers) {
             if (!flag) {
-                throw std::runtime_error(str);
+                return std::make_tuple(false, str);
             }
         }
+        return std::make_tuple(true, "ok");
     }
 
     void registerHandler(auto& grpc_context) {
